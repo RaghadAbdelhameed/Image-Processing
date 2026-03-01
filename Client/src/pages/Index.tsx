@@ -12,6 +12,7 @@ import { Sliders, ScanLine, BarChart3, Waves } from "lucide-react";
 const Index = () => {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageData, setImageData] = useState<ImageData | null>(null);
+  const [imageId, setImageId] = useState<string | null>(null);
   const [imageBUrl, setImageBUrl] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("spatial");
 
@@ -20,11 +21,28 @@ const Index = () => {
     setImageUrl(url);
     const canvas = await loadImageToCanvas(file);
     setImageData(getImageData(canvas));
+
+    // Upload to backend
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const response = await fetch('http://localhost:8000/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.ok) throw new Error('Upload failed');
+      const data = await response.json();
+      setImageId(data.image_id);
+    } catch (error) {
+      console.error('Upload error:', error);
+      // Handle error (e.g., alert user)
+    }
   }, []);
 
   const handleClear = useCallback(() => {
     setImageUrl(null);
     setImageData(null);
+    setImageId(null);
   }, []);
 
   const handleImageBLoad = useCallback(async (file: File) => {
@@ -74,10 +92,10 @@ const Index = () => {
           </TabsList>
           <div className="flex-1 panel-glass p-5 min-h-0">
             <TabsContent value="spatial" className="h-full m-0">
-              <SpatialFiltersTab sourceData={imageData} />
+              <SpatialFiltersTab imageId={imageId} />
             </TabsContent>
             <TabsContent value="edge" className="h-full m-0">
-              <EdgeDetectionTab sourceData={imageData} />
+              <EdgeDetectionTab imageId={imageId} />
             </TabsContent>
             <TabsContent value="histogram" className="h-full m-0">
               <HistogramsTab sourceData={imageData} />

@@ -6,10 +6,10 @@ import ProcessingOverlay from "./ProcessingOverlay";
 import { ImageIcon, Play } from "lucide-react";
 
 interface Props {
-  sourceData: ImageData | null;
+  imageId: string | null;
 }
 
-export default function SpatialFiltersTab({ sourceData }: Props) {
+export default function SpatialFiltersTab({ imageId }: Props) {
   const [noiseType, setNoiseType] = useState("gaussian");
   const [filterType, setFilterType] = useState("gaussian");
   const [noiseRatio, setNoiseRatio] = useState(0.3);
@@ -18,11 +18,30 @@ export default function SpatialFiltersTab({ sourceData }: Props) {
   const [noisyUrl, setNoisyUrl] = useState<string | null>(null);
   const [filteredUrl, setFilteredUrl] = useState<string | null>(null);
 
-  const handleApply = () => {
-    if (!sourceData) return;
+  const handleApply = async () => {
+    if (!imageId) return;
     setIsProcessing(true);
-    // TODO: Call server endpoint
-    setTimeout(() => setIsProcessing(false), 1500);
+    try {
+      const response = await fetch(`http://localhost:8000/apply_spatial?image_id=${imageId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          noise_type: noiseType,
+          filter_type: filterType,
+          noise_ratio: noiseRatio,
+          kernel_size: kernelSize,
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to apply filters');
+      const data = await response.json();
+      setNoisyUrl(`data:image/png;base64,${data.noisy_image}`);
+      setFilteredUrl(`data:image/png;base64,${data.filtered_image}`);
+    } catch (error) {
+      console.error('Error:', error);
+      // Handle error (e.g., show toast)
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -59,7 +78,7 @@ export default function SpatialFiltersTab({ sourceData }: Props) {
           <span className="control-label">Kernel: {kernelSize}×{kernelSize}</span>
           <Slider value={[kernelSize]} onValueChange={([v]) => setKernelSize(v)} min={3} max={7} step={2} className="mt-1" />
         </div>
-        <Button onClick={handleApply} disabled={isProcessing || !sourceData} size="sm" className="btn-apply">
+        <Button onClick={handleApply} disabled={isProcessing || !imageId} size="sm" className="btn-apply">
           <Play size={12} /> Apply
         </Button>
       </div>
