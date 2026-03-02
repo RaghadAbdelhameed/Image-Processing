@@ -27,6 +27,11 @@ def convolve(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
         return output
     raise ValueError("convolve() supports only grayscale (2D) or RGB (H,W,3)")
 
+def resize_to_match(img1: np.ndarray, img2: np.ndarray):
+    """Resizes img2 to match the dimensions of img1."""
+    h, w = img1.shape[:2]
+    return cv2.resize(img2, (w, h))
+
 # Normalize for display
 def normalize_img(img: np.ndarray) -> np.ndarray:
     if img.max() > 0:

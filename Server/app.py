@@ -7,6 +7,7 @@ import cv2
 from utils import image_to_base64, to_grayscale, normalize_img
 from spatial import add_noise, apply_filter
 from edge import apply_edge
+from fft_filters_hybrid import apply_fft_filter, create_hybrid
 
 app = FastAPI(title="Image Equalizer Backend")
 
@@ -28,6 +29,16 @@ class SpatialParams(BaseModel):
 
 class EdgeParams(BaseModel):
     method: str
+
+class FFTParams(BaseModel):
+    filter_type: str
+    radius: int
+
+class HybridParams(BaseModel):
+    image_id_1: str
+    image_id_2: str
+    radius_low: int
+    radius_high: int
 
 @app.post("/upload")
 async def upload_image(file: UploadFile = File(...)):
@@ -77,3 +88,33 @@ async def apply_edge_detection(
             elif res["label"] == "Y-Gradient": response["gy"] = image_to_base64(res["image"])
             elif res["label"] == "Magnitude":  response["magnitude"] = image_to_base64(res["image"])
     return response
+
+@app.post("/apply_fft")
+async def apply_fft(params: FFTParams, image_id: str = Query(...)):
+    if image_id not in images:
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    result = apply_fft_filter(images[image_id], params.filter_type, params.radius)
+    return {"result_image": image_to_base64(result)}
+
+@app.post("/apply_hybrid")
+async def apply_hybrid_endpoint(params: HybridParams):
+    if params.image_id_1 not in images or params.image_id_2 not in images:
+        raise HTTPException(status_code=404, detail="One or both images not found")
+    
+    img1 = images[params.image_id_1]
+    img2 = images[params.image_id_2]
+    
+    # Get all three processed images from the hybrid function
+    lp, hp, hybrid = create_hybrid(
+        img1, 
+        img2, 
+        params.radius_low, 
+        params.radius_high
+    )
+    
+    return {
+        "lp_image": image_to_base64(lp),
+        "hp_image": image_to_base64(hp),
+        "hybrid_image": image_to_base64(hybrid)
+    }

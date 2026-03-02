@@ -13,6 +13,7 @@ const Index = () => {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageData, setImageData] = useState<ImageData | null>(null);
   const [imageId, setImageId] = useState<string | null>(null);
+  const [imageBId, setImageBId] = useState<string | null>(null);
   const [imageBUrl, setImageBUrl] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("spatial");
 
@@ -48,10 +49,25 @@ const Index = () => {
   const handleImageBLoad = useCallback(async (file: File) => {
     const url = URL.createObjectURL(file);
     setImageBUrl(url);
+
+    // Upload Image B to backend
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const response = await fetch('http://localhost:8000/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await response.json();
+      setImageBId(data.image_id); // Store the ID for Image B
+    } catch (error) {
+      console.error('Upload B error:', error);
+    }
   }, []);
 
   const handleImageBClear = useCallback(() => {
     setImageBUrl(null);
+    setImageBId(null);
   }, []);
 
   if (!imageData) {
@@ -101,7 +117,10 @@ const Index = () => {
               <HistogramsTab sourceData={imageData} />
             </TabsContent>
             <TabsContent value="frequency" className="h-full m-0">
-              <FrequencyTab sourceData={imageData} imageBUrl={imageBUrl} />
+              <FrequencyTab 
+                imageIdA={imageId} 
+                imageIdB={imageBId} 
+              />
             </TabsContent>
           </div>
         </Tabs>
