@@ -3,8 +3,6 @@ import { Button } from "@/components/ui/button";
 import ProcessingOverlay from "./ProcessingOverlay";
 import {
   computeHistogram,
-  equalizeHistogram,
-  normalizeImage,
   toGrayscale,
   imageDataToDataURL,
 } from "@/lib/imageProcessing";
@@ -23,13 +21,15 @@ import { Play, ImageIcon, BarChart3, TrendingUp } from "lucide-react";
 
 interface Props {
   sourceData: ImageData | null;
+  imageId: string | null;
 }
 
 type Mode = "gray" | "rgb";
 type Action = "none" | "equalize" | "normalize";
 type ChartView = "histogram" | "cdf";
 
-// Build chart data from histogram arrays
+// ── Chart data builder (identical to original) ───────────────────────────────
+
 function buildChartData(hists: number[][], cdfs: number[][], mode: Mode) {
   return Array.from({ length: 256 }, (_, i) => {
     if (mode === "gray") {
@@ -54,22 +54,150 @@ const CHANNEL_COLORS = {
   gray: "#a78bfa",
 };
 
-export default function HistogramsTab({ sourceData }: Props) {
+// ── Chart renderers (identical to original) ──────────────────────────────────
+
+const renderGrayChart = (
+  data: ReturnType<typeof buildChartData>,
+  chartView: ChartView
+) => {
+  if (chartView === "histogram") {
+    return (
+      <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+        <defs>
+          <linearGradient id="grayGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={CHANNEL_COLORS.gray} stopOpacity={0.6} />
+            <stop offset="95%" stopColor={CHANNEL_COLORS.gray} stopOpacity={0.05} />
+          </linearGradient>
+        </defs>
+        <XAxis dataKey="i" tick={{ fontSize: 9 }} interval={63} />
+        <YAxis tick={{ fontSize: 9 }} />
+        <Tooltip
+          contentStyle={{ background: "#0f0f14", border: "1px solid #2a2a3a", fontSize: 10 }}
+          formatter={(v: number) => [v.toLocaleString(), "Count"]}
+          labelFormatter={(l) => `Value: ${l}`}
+        />
+        <Area type="monotone" dataKey="hist" stroke={CHANNEL_COLORS.gray} fill="url(#grayGrad)" strokeWidth={1} dot={false} />
+      </AreaChart>
+    );
+  }
+  return (
+    <LineChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+      <XAxis dataKey="i" tick={{ fontSize: 9 }} interval={63} />
+      <YAxis domain={[0, 1]} tick={{ fontSize: 9 }} />
+      <Tooltip
+        contentStyle={{ background: "#0f0f14", border: "1px solid #2a2a3a", fontSize: 10 }}
+        formatter={(v: number) => [v.toFixed(4), "CDF"]}
+        labelFormatter={(l) => `Value: ${l}`}
+      />
+      <Line type="monotone" dataKey="cdf" stroke={CHANNEL_COLORS.gray} strokeWidth={1.5} dot={false} />
+    </LineChart>
+  );
+};
+
+const renderRGBChart = (
+  data: ReturnType<typeof buildChartData>,
+  chartView: ChartView
+) => {
+  const channels = ["R", "G", "B"] as const;
+  if (chartView === "histogram") {
+    return (
+      <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+        <defs>
+          {channels.map((ch) => (
+            <linearGradient key={ch} id={`grad_${ch}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={CHANNEL_COLORS[ch]} stopOpacity={0.45} />
+              <stop offset="95%" stopColor={CHANNEL_COLORS[ch]} stopOpacity={0.02} />
+            </linearGradient>
+          ))}
+        </defs>
+        <XAxis dataKey="i" tick={{ fontSize: 9 }} interval={63} />
+        <YAxis tick={{ fontSize: 9 }} />
+        <Tooltip
+          contentStyle={{ background: "#0f0f14", border: "1px solid #2a2a3a", fontSize: 10 }}
+          labelFormatter={(l) => `Value: ${l}`}
+        />
+        <Legend wrapperStyle={{ fontSize: 10 }} />
+        {channels.map((ch) => (
+          <Area
+            key={ch}
+            type="monotone"
+            dataKey={`${ch}_hist`}
+            name={ch}
+            stroke={CHANNEL_COLORS[ch]}
+            fill={`url(#grad_${ch})`}
+            strokeWidth={1}
+            dot={false}
+          />
+        ))}
+      </AreaChart>
+    );
+  }
+  return (
+    <LineChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+      <XAxis dataKey="i" tick={{ fontSize: 9 }} interval={63} />
+      <YAxis domain={[0, 1]} tick={{ fontSize: 9 }} />
+      <Tooltip
+        contentStyle={{ background: "#0f0f14", border: "1px solid #2a2a3a", fontSize: 10 }}
+        formatter={(v: number) => [v.toFixed(4)]}
+        labelFormatter={(l) => `Value: ${l}`}
+      />
+      <Legend wrapperStyle={{ fontSize: 10 }} />
+      {channels.map((ch) => (
+        <Line
+          key={ch}
+          type="monotone"
+          dataKey={`${ch}_cdf`}
+          name={ch}
+          stroke={CHANNEL_COLORS[ch]}
+          strokeWidth={1.5}
+          dot={false}
+        />
+      ))}
+    </LineChart>
+  );
+};
+
+const renderChart = (
+  data: ReturnType<typeof buildChartData>,
+  mode: Mode,
+  chartView: ChartView,
+  empty: boolean
+) => {
+  if (empty || data.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground/30 text-xs">
+        Apply to see result chart
+      </div>
+    );
+  }
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      {mode === "gray" ? renderGrayChart(data, chartView) : renderRGBChart(data, chartView)}
+    </ResponsiveContainer>
+  );
+};
+
+// ── Main component ───────────────────────────────────────────────────────────
+
+const API_BASE = "http://localhost:8000";
+
+export default function HistogramsTab({ sourceData, imageId }: Props) {
   const [mode, setMode] = useState<Mode>("gray");
   const [action, setAction] = useState<Action>("none");
   const [chartView, setChartView] = useState<ChartView>("histogram");
   const [isProcessing, setIsProcessing] = useState(false);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [processedData, setProcessedData] = useState<ImageData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Compute histogram for source image (live, no button needed for display)
+  // ── Source histogram — computed client-side from sourceData, exactly like original ──
   const sourceHistData = useMemo(() => {
     if (!sourceData) return null;
     const data = mode === "gray" ? toGrayscale(sourceData) : sourceData;
     return computeHistogram(data, mode);
   }, [sourceData, mode]);
 
-  // Compute histogram for result image
+  // ── Result histogram — computed client-side from processedData, exactly like original ──
   const resultHistData = useMemo(() => {
     if (!processedData) return null;
     return computeHistogram(processedData, mode);
@@ -85,143 +213,55 @@ export default function HistogramsTab({ sourceData }: Props) {
     [resultHistData, mode]
   );
 
-  const handleApply = () => {
+  const handleApply = async () => {
     if (!sourceData) return;
+
+    // "View Only" — just convert client-side, no server call needed
+    if (action === "none") {
+      const result = mode === "gray" ? toGrayscale(sourceData) : sourceData;
+      setProcessedData(result);
+      setResultUrl(imageDataToDataURL(result));
+      return;
+    }
+
+    // Equalize / Normalize — call server
+    if (!imageId) return;
     setIsProcessing(true);
+    setError(null);
 
-    setTimeout(() => {
-      try {
-        // For point 8: always convert to grayscale first for gray mode
-        const workingData = mode === "gray" ? toGrayscale(sourceData) : sourceData;
+    try {
+      const res = await fetch(`${API_BASE}/apply_histogram?image_id=${imageId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, action }),
+      });
 
-        let result: ImageData;
-        if (action === "equalize") {
-          result = equalizeHistogram(workingData, mode);
-        } else if (action === "normalize") {
-          result = normalizeImage(workingData, mode);
-        } else {
-          // Just show grayscale / original conversion (point 8)
-          result = workingData;
-        }
-
-        setProcessedData(result);
-        setResultUrl(imageDataToDataURL(result));
-      } finally {
-        setIsProcessing(false);
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({})) as { detail?: string };
+        throw new Error(detail?.detail ?? `Server error ${res.status}`);
       }
-    }, 50);
-  };
 
-  const activeData = chartView === "histogram" ? "hist" : "cdf";
+      const json = await res.json() as { result_image: string };
 
-  const renderGrayChart = (data: ReturnType<typeof buildChartData>) => {
-    if (chartView === "histogram") {
-      return (
-        <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-          <defs>
-            <linearGradient id="grayGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={CHANNEL_COLORS.gray} stopOpacity={0.6} />
-              <stop offset="95%" stopColor={CHANNEL_COLORS.gray} stopOpacity={0.05} />
-            </linearGradient>
-          </defs>
-          <XAxis dataKey="i" tick={{ fontSize: 9 }} interval={63} />
-          <YAxis tick={{ fontSize: 9 }} />
-          <Tooltip
-            contentStyle={{ background: "#0f0f14", border: "1px solid #2a2a3a", fontSize: 10 }}
-            formatter={(v: number) => [v.toLocaleString(), "Count"]}
-            labelFormatter={(l) => `Value: ${l}`}
-          />
-          <Area type="monotone" dataKey="hist" stroke={CHANNEL_COLORS.gray} fill="url(#grayGrad)" strokeWidth={1} dot={false} />
-        </AreaChart>
-      );
+      // Decode the base64 PNG back into an ImageData so the result histogram
+      // can be computed client-side exactly as the original did
+      const img = new Image();
+      img.src = `data:image/png;base64,${json.result_image}`;
+      await new Promise<void>((resolve) => { img.onload = () => resolve(); });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      canvas.getContext("2d")!.drawImage(img, 0, 0);
+      const resultImageData = canvas.getContext("2d")!.getImageData(0, 0, img.width, img.height);
+
+      setProcessedData(resultImageData);
+      setResultUrl(`data:image/png;base64,${json.result_image}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setIsProcessing(false);
     }
-    return (
-      <LineChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-        <XAxis dataKey="i" tick={{ fontSize: 9 }} interval={63} />
-        <YAxis domain={[0, 1]} tick={{ fontSize: 9 }} />
-        <Tooltip
-          contentStyle={{ background: "#0f0f14", border: "1px solid #2a2a3a", fontSize: 10 }}
-          formatter={(v: number) => [v.toFixed(4), "CDF"]}
-          labelFormatter={(l) => `Value: ${l}`}
-        />
-        <Line type="monotone" dataKey="cdf" stroke={CHANNEL_COLORS.gray} strokeWidth={1.5} dot={false} />
-      </LineChart>
-    );
-  };
-
-  const renderRGBChart = (data: ReturnType<typeof buildChartData>) => {
-    const channels = ["R", "G", "B"] as const;
-    if (chartView === "histogram") {
-      return (
-        <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-          <defs>
-            {channels.map((ch) => (
-              <linearGradient key={ch} id={`grad_${ch}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={CHANNEL_COLORS[ch]} stopOpacity={0.45} />
-                <stop offset="95%" stopColor={CHANNEL_COLORS[ch]} stopOpacity={0.02} />
-              </linearGradient>
-            ))}
-          </defs>
-          <XAxis dataKey="i" tick={{ fontSize: 9 }} interval={63} />
-          <YAxis tick={{ fontSize: 9 }} />
-          <Tooltip
-            contentStyle={{ background: "#0f0f14", border: "1px solid #2a2a3a", fontSize: 10 }}
-            labelFormatter={(l) => `Value: ${l}`}
-          />
-          <Legend wrapperStyle={{ fontSize: 10 }} />
-          {channels.map((ch) => (
-            <Area
-              key={ch}
-              type="monotone"
-              dataKey={`${ch}_hist`}
-              name={ch}
-              stroke={CHANNEL_COLORS[ch]}
-              fill={`url(#grad_${ch})`}
-              strokeWidth={1}
-              dot={false}
-            />
-          ))}
-        </AreaChart>
-      );
-    }
-    return (
-      <LineChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-        <XAxis dataKey="i" tick={{ fontSize: 9 }} interval={63} />
-        <YAxis domain={[0, 1]} tick={{ fontSize: 9 }} />
-        <Tooltip
-          contentStyle={{ background: "#0f0f14", border: "1px solid #2a2a3a", fontSize: 10 }}
-          formatter={(v: number) => [v.toFixed(4)]}
-          labelFormatter={(l) => `Value: ${l}`}
-        />
-        <Legend wrapperStyle={{ fontSize: 10 }} />
-        {channels.map((ch) => (
-          <Line
-            key={ch}
-            type="monotone"
-            dataKey={`${ch}_cdf`}
-            name={ch}
-            stroke={CHANNEL_COLORS[ch]}
-            strokeWidth={1.5}
-            dot={false}
-          />
-        ))}
-      </LineChart>
-    );
-  };
-
-  const renderChart = (data: ReturnType<typeof buildChartData>, empty: boolean) => {
-    if (empty || data.length === 0) {
-      return (
-        <div className="flex items-center justify-center h-full text-muted-foreground/30 text-xs">
-          Apply to see result chart
-        </div>
-      );
-    }
-    return (
-      <ResponsiveContainer width="100%" height="100%">
-        {mode === "gray" ? renderGrayChart(data) : renderRGBChart(data)}
-      </ResponsiveContainer>
-    );
   };
 
   return (
@@ -256,7 +296,7 @@ export default function HistogramsTab({ sourceData }: Props) {
           ))}
         </div>
 
-        {/* Chart view toggle */}
+        {/* Chart view */}
         <div className="flex gap-1 p-0.5 rounded-lg bg-background/30 border border-border/30">
           <button
             onClick={() => setChartView("histogram")}
@@ -282,10 +322,17 @@ export default function HistogramsTab({ sourceData }: Props) {
         </Button>
       </div>
 
-      {/* Main grid: 2 columns × 2 rows */}
+      {/* Error banner */}
+      {error && (
+        <div className="text-xs text-red-400 bg-red-950/30 border border-red-800/40 rounded px-2 py-1">
+          {error}
+        </div>
+      )}
+
+      {/* 2×2 grid */}
       <div className="flex-1 grid grid-cols-2 grid-rows-2 gap-3 min-h-0">
 
-        {/* Top-left: Source image preview */}
+        {/* Source image */}
         <div className="flex flex-col gap-1 min-h-0">
           <span className="control-label text-center">Source Image</span>
           <div className="image-display flex-1 min-h-0">
@@ -297,17 +344,17 @@ export default function HistogramsTab({ sourceData }: Props) {
           </div>
         </div>
 
-        {/* Top-right: Source histogram/CDF */}
+        {/* Source histogram/CDF */}
         <div className="flex flex-col gap-1 min-h-0">
           <span className="control-label text-center">
             Source {chartView === "histogram" ? "Histogram" : "CDF"}
           </span>
           <div className="image-display flex-1 min-h-0 p-2">
-            {renderChart(sourceChartData, sourceChartData.length === 0)}
+            {renderChart(sourceChartData, mode, chartView, sourceChartData.length === 0)}
           </div>
         </div>
 
-        {/* Bottom-left: Result image */}
+        {/* Result image */}
         <div className="flex flex-col gap-1 min-h-0">
           <span className="control-label text-center">
             Result{action !== "none" ? ` (${action}d)` : ""}
@@ -324,13 +371,13 @@ export default function HistogramsTab({ sourceData }: Props) {
           </div>
         </div>
 
-        {/* Bottom-right: Result histogram/CDF */}
+        {/* Result histogram/CDF */}
         <div className="flex flex-col gap-1 min-h-0">
           <span className="control-label text-center">
             Result {chartView === "histogram" ? "Histogram" : "CDF"}
           </span>
           <div className="image-display flex-1 min-h-0 p-2">
-            {renderChart(resultChartData, !resultHistData)}
+            {renderChart(resultChartData, mode, chartView, !resultHistData)}
           </div>
         </div>
 
@@ -339,7 +386,8 @@ export default function HistogramsTab({ sourceData }: Props) {
   );
 }
 
-// Small helper component to render source preview (applies grayscale visually if mode=gray)
+// ── Source preview — identical to original ───────────────────────────────────
+
 function SourcePreview({ data, mode }: { data: ImageData; mode: Mode }) {
   const url = useMemo(() => {
     const d = mode === "gray" ? toGrayscale(data) : data;

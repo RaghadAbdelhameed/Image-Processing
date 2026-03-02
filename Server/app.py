@@ -8,6 +8,7 @@ from utils import image_to_base64, to_grayscale, normalize_img
 from spatial import add_noise, apply_filter
 from edge import apply_edge
 from fft_filters_hybrid import apply_fft_filter, create_hybrid
+from histogram import process_histogram
 
 app = FastAPI(title="Image Equalizer Backend")
 
@@ -40,6 +41,10 @@ class HybridParams(BaseModel):
     radius_low: int
     radius_high: int
 
+class HistogramParams(BaseModel):
+    mode: str    # "gray" | "rgb"
+    action: str  # "none" | "equalize" | "normalize"
+
 @app.post("/upload")
 async def upload_image(file: UploadFile = File(...)):
     contents = await file.read()
@@ -60,7 +65,7 @@ async def apply_spatial(
     if image_id not in images:
         raise HTTPException(status_code=404, detail="Image not found")
     
-    img = images[image_id]                    # ← RGB (no grayscale)
+    img = images[image_id]
     noisy = add_noise(img, params.noise_type, params.noise_ratio)
     filtered = apply_filter(noisy, params.filter_type, params.kernel_size)
     
@@ -77,7 +82,7 @@ async def apply_edge_detection(
     if image_id not in images:
         raise HTTPException(status_code=404, detail="Image not found")
     img = images[image_id]
-    gray = to_grayscale(img)                  # edge detection stays grayscale
+    gray = to_grayscale(img)
     results = apply_edge(gray, params.method)
     response = {}
     if params.method == "canny":
@@ -105,7 +110,6 @@ async def apply_hybrid_endpoint(params: HybridParams):
     img1 = images[params.image_id_1]
     img2 = images[params.image_id_2]
     
-    # Get all three processed images from the hybrid function
     lp, hp, hybrid = create_hybrid(
         img1, 
         img2, 
@@ -118,3 +122,14 @@ async def apply_hybrid_endpoint(params: HybridParams):
         "hp_image": image_to_base64(hp),
         "hybrid_image": image_to_base64(hybrid)
     }
+
+@app.post("/apply_histogram")
+async def apply_histogram(
+    image_id: str = Query(...),
+    params: HistogramParams = Body(...)
+):
+    if image_id not in images:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    result = process_histogram(images[image_id], params.mode, params.action)
+    return result

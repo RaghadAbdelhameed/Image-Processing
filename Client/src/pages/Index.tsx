@@ -36,7 +36,6 @@ const Index = () => {
       setImageId(data.image_id);
     } catch (error) {
       console.error('Upload error:', error);
-      // Handle error (e.g., alert user)
     }
   }, []);
 
@@ -50,7 +49,6 @@ const Index = () => {
     const url = URL.createObjectURL(file);
     setImageBUrl(url);
 
-    // Upload Image B to backend
     const formData = new FormData();
     formData.append('file', file);
     try {
@@ -59,7 +57,7 @@ const Index = () => {
         body: formData,
       });
       const data = await response.json();
-      setImageBId(data.image_id); // Store the ID for Image B
+      setImageBId(data.image_id);
     } catch (error) {
       console.error('Upload B error:', error);
     }
@@ -114,7 +112,7 @@ const Index = () => {
               <EdgeDetectionTab imageId={imageId} />
             </TabsContent>
             <TabsContent value="histogram" className="h-full m-0">
-              <HistogramsTab sourceData={imageData} />
+              <HistogramsTab sourceData={imageData} imageId={imageId} />
             </TabsContent>
             <TabsContent value="frequency" className="h-full m-0">
               <FrequencyTab 
