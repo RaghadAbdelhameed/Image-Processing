@@ -3,18 +3,26 @@ from PIL import Image
 import io
 import base64
 import cv2
+from numpy.lib.stride_tricks import sliding_window_view
 
 # Private 2D convolution (used internally)
 def _convolve_2d(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     iH, iW = image.shape
     kH, kW = kernel.shape
-    pad = kH // 2
-    padded = np.pad(image, ((pad, pad), (pad, pad)), mode='edge')
-    output = np.zeros((iH, iW), dtype=np.float32)
-    for y in range(iH):
-        for x in range(iW):
-            output[y, x] = np.sum(kernel * padded[y:y + kH, x:x + kW])
-    return output
+    pad_h, pad_w = kH // 2, kW // 2
+    
+    # 1. Pad the image exactly like you did before
+    padded = np.pad(image, ((pad_h, pad_h), (pad_w, pad_w)), mode='edge')
+    
+    # 2. Extract ALL sliding windows at once. 
+    # This creates a 4D array where each pixel gets its own (kH, kW) neighborhood.
+    windows = sliding_window_view(padded, (kH, kW))
+    
+    # 3. Multiply all windows by the kernel and sum across the window dimensions (axes 2 and 3)
+    # This single line replaces both of your 'for' loops!
+    output = np.sum(windows * kernel, axis=(2, 3))
+    
+    return output.astype(np.float32)
 
 # Public convolution - works on GRAY (2D) or RGB (H,W,3)
 def convolve(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:

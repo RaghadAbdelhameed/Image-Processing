@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import math
 from utils import convolve
+from numpy.lib.stride_tricks import sliding_window_view
 
 def gaussian_kernel(size: int, sigma: float = 1.0) -> np.ndarray:
     kernel = np.zeros((size, size), dtype=np.float32)
@@ -22,21 +23,23 @@ def median_filter(image: np.ndarray, size: int) -> np.ndarray:
     if size % 2 == 0:
         raise ValueError("Kernel size must be odd")
 
-    if len(image.shape) == 2:  # grayscale
-        h, w = image.shape
+    if len(image.shape) == 2:  # Grayscale
         pad = size // 2
         padded = np.pad(image, ((pad, pad), (pad, pad)), mode='edge')
-        output = np.zeros((h, w), dtype=np.uint8)
-        for y in range(h):
-            for x in range(w):
-                region = padded[y:y + size, x:x + size].flatten()
-                output[y, x] = np.median(region)
-        return output
+        
+        # 1. Extract ALL sliding windows at once
+        windows = sliding_window_view(padded, (size, size))
+        
+        # 2. Calculate the median across the window dimensions (axes 2 and 3)
+        output = np.median(windows, axis=(2, 3))
+        
+        return output.astype(np.uint8)
 
     elif len(image.shape) == 3 and image.shape[2] == 3:  # RGB
         output = np.zeros_like(image, dtype=np.uint8)
         for c in range(3):
-            output[:, :, c] = median_filter(image[:, :, c], size)  # reuse grayscale version
+            # We still loop through the 3 color channels, which is perfectly fine and fast enough!
+            output[:, :, c] = median_filter(image[:, :, c], size)
         return output
 
     raise ValueError("median_filter supports grayscale or RGB only")
