@@ -1,11 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import ProcessingOverlay from "./ProcessingOverlay";
-import {
-  computeHistogram,
-  toGrayscale,
-  imageDataToDataURL,
-} from "@/lib/imageProcessing";
 import {
   AreaChart,
   Area,
@@ -20,7 +15,7 @@ import {
 import { Play, ImageIcon, BarChart3, TrendingUp } from "lucide-react";
 
 interface Props {
-  sourceData: ImageData | null;
+  sourceData: ImageData | null; // Kept to not break parent, but unused internally now
   imageId: string | null;
 }
 
@@ -28,9 +23,13 @@ type Mode = "gray" | "rgb";
 type Action = "none" | "equalize" | "normalize";
 type ChartView = "histogram" | "cdf";
 
-// ── Chart data builder (identical to original) ───────────────────────────────
+// ── Chart data builder ───────────────────────────────────────────────────────
 
 function buildChartData(hists: number[][], cdfs: number[][], mode: Mode) {
+  // Safety check: Prevent crashing if data is missing or doesn't match the mode yet
+  if (!hists || hists.length === 0 || !cdfs || cdfs.length === 0) return [];
+  if (mode === "rgb" && (hists.length < 3 || cdfs.length < 3)) return [];
+
   return Array.from({ length: 256 }, (_, i) => {
     if (mode === "gray") {
       return { i, hist: hists[0][i], cdf: cdfs[0][i] };
@@ -54,7 +53,7 @@ const CHANNEL_COLORS = {
   gray: "#a78bfa",
 };
 
-// ── Chart renderers (identical to original) ──────────────────────────────────
+// ── Chart renderers ──────────────────────────────────────────────────────────
 
 const renderGrayChart = (
   data: ReturnType<typeof buildChartData>,
@@ -166,7 +165,7 @@ const renderChart = (
   if (empty || data.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground/30 text-xs">
-        Apply to see result chart
+        Data unavailable
       </div>
     );
   }
@@ -181,27 +180,56 @@ const renderChart = (
 
 const API_BASE = "http://localhost:8000";
 
-export default function HistogramsTab({ sourceData, imageId }: Props) {
+export default function HistogramsTab({ imageId }: Props) {
   const [mode, setMode] = useState<Mode>("gray");
   const [action, setAction] = useState<Action>("none");
   const [chartView, setChartView] = useState<ChartView>("histogram");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [resultUrl, setResultUrl] = useState<string | null>(null);
-  const [processedData, setProcessedData] = useState<ImageData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Source histogram — computed client-side from sourceData, exactly like original ──
-  const sourceHistData = useMemo(() => {
-    if (!sourceData) return null;
-    const data = mode === "gray" ? toGrayscale(sourceData) : sourceData;
-    return computeHistogram(data, mode);
-  }, [sourceData, mode]);
+  // States driven entirely by backend
+  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
+  const [sourceHistData, setSourceHistData] = useState<{ hist: number[][], cdf: number[][] } | null>(null);
 
-  // ── Result histogram — computed client-side from processedData, exactly like original ──
-  const resultHistData = useMemo(() => {
-    if (!processedData) return null;
-    return computeHistogram(processedData, mode);
-  }, [processedData, mode]);
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [resultHistData, setResultHistData] = useState<{ hist: number[][], cdf: number[][] } | null>(null);
+
+  // Fetch source histogram & mode-converted preview automatically when imageId/mode changes
+  useEffect(() => {
+    if (!imageId) return;
+
+    // Clear old data IMMEDIATELY when mode/imageId changes to prevent stale data crashes
+    setSourceUrl(null);
+    setSourceHistData(null);
+    setResultUrl(null);
+    setResultHistData(null);
+
+    const fetchSource = async () => {
+      setIsProcessing(true);
+      setError(null);
+      try {
+        const res = await fetch(`${API_BASE}/apply_histogram?image_id=${imageId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode, action: "none" }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`Server error ${res.status}`);
+        }
+
+        const data = await res.json();
+        setSourceUrl(`data:image/png;base64,${data.result_image}`);
+        setSourceHistData(data.source_hist);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Failed to load source histogram");
+      } finally {
+        setIsProcessing(false);
+      }
+    };
+
+    fetchSource();
+  }, [imageId, mode]);
 
   const sourceChartData = useMemo(
     () => sourceHistData ? buildChartData(sourceHistData.hist, sourceHistData.cdf, mode) : [],
@@ -214,18 +242,15 @@ export default function HistogramsTab({ sourceData, imageId }: Props) {
   );
 
   const handleApply = async () => {
-    if (!sourceData) return;
+    if (!imageId) return;
 
-    // "View Only" — just convert client-side, no server call needed
+    // If just viewing, duplicate source into result pane without hitting server again
     if (action === "none") {
-      const result = mode === "gray" ? toGrayscale(sourceData) : sourceData;
-      setProcessedData(result);
-      setResultUrl(imageDataToDataURL(result));
+      setResultUrl(sourceUrl);
+      setResultHistData(sourceHistData);
       return;
     }
 
-    // Equalize / Normalize — call server
-    if (!imageId) return;
     setIsProcessing(true);
     setError(null);
 
@@ -241,22 +266,10 @@ export default function HistogramsTab({ sourceData, imageId }: Props) {
         throw new Error(detail?.detail ?? `Server error ${res.status}`);
       }
 
-      const json = await res.json() as { result_image: string };
+      const json = await res.json() as { result_image: string, result_hist: { hist: number[][], cdf: number[][] } };
 
-      // Decode the base64 PNG back into an ImageData so the result histogram
-      // can be computed client-side exactly as the original did
-      const img = new Image();
-      img.src = `data:image/png;base64,${json.result_image}`;
-      await new Promise<void>((resolve) => { img.onload = () => resolve(); });
-
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      canvas.getContext("2d")!.drawImage(img, 0, 0);
-      const resultImageData = canvas.getContext("2d")!.getImageData(0, 0, img.width, img.height);
-
-      setProcessedData(resultImageData);
       setResultUrl(`data:image/png;base64,${json.result_image}`);
+      setResultHistData(json.result_hist);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -275,7 +288,7 @@ export default function HistogramsTab({ sourceData, imageId }: Props) {
           {(["gray", "rgb"] as const).map((m) => (
             <button
               key={m}
-              onClick={() => { setMode(m); setResultUrl(null); setProcessedData(null); }}
+              onClick={() => setMode(m)}
               className={`toggle-btn ${mode === m ? "toggle-btn-active" : "text-muted-foreground hover:text-foreground"}`}
             >
               {m === "gray" ? "Grayscale" : "RGB"}
@@ -314,7 +327,7 @@ export default function HistogramsTab({ sourceData, imageId }: Props) {
 
         <Button
           onClick={handleApply}
-          disabled={isProcessing || !sourceData}
+          disabled={isProcessing || !imageId}
           size="sm"
           className="btn-apply"
         >
@@ -336,8 +349,8 @@ export default function HistogramsTab({ sourceData, imageId }: Props) {
         <div className="flex flex-col gap-1 min-h-0">
           <span className="control-label text-center">Source Image</span>
           <div className="image-display flex-1 min-h-0">
-            {sourceData ? (
-              <SourcePreview data={sourceData} mode={mode} />
+            {sourceUrl ? (
+              <img src={sourceUrl} alt="Source" className="w-full h-full object-contain" />
             ) : (
               <ImageIcon size={28} className="text-muted-foreground/15" />
             )}
@@ -384,19 +397,4 @@ export default function HistogramsTab({ sourceData, imageId }: Props) {
       </div>
     </div>
   );
-}
-
-// ── Source preview — identical to original ───────────────────────────────────
-
-function SourcePreview({ data, mode }: { data: ImageData; mode: Mode }) {
-  const url = useMemo(() => {
-    const d = mode === "gray" ? toGrayscale(data) : data;
-    const c = document.createElement("canvas");
-    c.width = d.width;
-    c.height = d.height;
-    c.getContext("2d")!.putImageData(d, 0, 0);
-    return c.toDataURL();
-  }, [data, mode]);
-
-  return <img src={url} alt="Source" className="w-full h-full object-contain" />;
 }
