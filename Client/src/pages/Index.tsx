@@ -9,67 +9,56 @@ import LandingHero from "@/components/LandingHero";
 import { loadImageToCanvas, getImageData } from "@/lib/imageProcessing";
 import { Sliders, ScanLine, BarChart3, Waves } from "lucide-react";
 
+const useImageUpload = (label: string) => {
+  const [url, setUrl] = useState<string | null>(null);
+  const [id, setId] = useState<string | null>(null);
+  const [data, setData] = useState<ImageData | null>(null);
+
+  const load = useCallback(async (file: File) => {
+    // 1. Create Preview URL
+    const objectUrl = URL.createObjectURL(file);
+    setUrl(objectUrl);
+
+    // 2. Get Metadata (Width/Height)
+    const canvas = await loadImageToCanvas(file);
+    setData(getImageData(canvas));
+
+    // 3. Upload to Backend
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch('http://localhost:8000/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.ok) throw new Error(`${label} upload failed`);
+      const result = await response.json();
+      setId(result.image_id);
+    } catch (error) {
+      console.error(`${label} Error:`, error);
+    }
+  }, [label]);
+
+  const clear = useCallback(() => {
+    setUrl(null);
+    setId(null);
+    setData(null);
+  }, []);
+
+  return { url, id, data, load, clear };
+};
+
 const Index = () => {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [imageData, setImageData] = useState<ImageData | null>(null);
-  const [imageId, setImageId] = useState<string | null>(null);
-  const [imageBId, setImageBId] = useState<string | null>(null);
-  const [imageBUrl, setImageBUrl] = useState<string | null>(null);
+  // Call the hook for Image A and Image B
+  const imageA = useImageUpload("Image A");
+  const imageB = useImageUpload("Image B");
   const [activeTab, setActiveTab] = useState("spatial");
 
-  const handleImageLoad = useCallback(async (file: File) => {
-    const url = URL.createObjectURL(file);
-    setImageUrl(url);
-    const canvas = await loadImageToCanvas(file);
-    setImageData(getImageData(canvas));
 
-    // Upload to backend
-    const formData = new FormData();
-    formData.append('file', file);
-    try {
-      const response = await fetch('http://localhost:8000/upload', {
-        method: 'POST',
-        body: formData,
-      });
-      if (!response.ok) throw new Error('Upload failed');
-      const data = await response.json();
-      setImageId(data.image_id);
-    } catch (error) {
-      console.error('Upload error:', error);
-    }
-  }, []);
-
-  const handleClear = useCallback(() => {
-    setImageUrl(null);
-    setImageData(null);
-    setImageId(null);
-  }, []);
-
-  const handleImageBLoad = useCallback(async (file: File) => {
-    const url = URL.createObjectURL(file);
-    setImageBUrl(url);
-
-    const formData = new FormData();
-    formData.append('file', file);
-    try {
-      const response = await fetch('http://localhost:8000/upload', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await response.json();
-      setImageBId(data.image_id);
-    } catch (error) {
-      console.error('Upload B error:', error);
-    }
-  }, []);
-
-  const handleImageBClear = useCallback(() => {
-    setImageBUrl(null);
-    setImageBId(null);
-  }, []);
-
-  if (!imageData) {
-    return <LandingHero onImageLoad={handleImageLoad} />;
+  // Initial Landing State check
+  if (!imageA.data) {
+    return <LandingHero onImageLoad={imageA.load} />;
   }
 
   return (
@@ -106,18 +95,18 @@ const Index = () => {
           </TabsList>
           <div className="flex-1 panel-glass p-5 min-h-0">
             <TabsContent value="spatial" className="h-full m-0">
-              <SpatialFiltersTab imageId={imageId} />
+              <SpatialFiltersTab imageId={imageA.id} />
             </TabsContent>
             <TabsContent value="edge" className="h-full m-0">
-              <EdgeDetectionTab imageId={imageId} />
+              <EdgeDetectionTab imageId={imageA.id} />
             </TabsContent>
             <TabsContent value="histogram" className="h-full m-0">
-              <HistogramsTab sourceData={imageData} imageId={imageId} />
+              <HistogramsTab sourceData={imageA.data} imageId={imageA.id} />
             </TabsContent>
             <TabsContent value="frequency" className="h-full m-0">
-              <FrequencyTab 
-                imageIdA={imageId} 
-                imageIdB={imageBId} 
+              <FrequencyTab
+                imageIdA={imageA.id}
+                imageIdB={imageB.id}
               />
             </TabsContent>
           </div>
@@ -128,18 +117,18 @@ const Index = () => {
       <div className="w-[260px] shrink-0 p-5 flex flex-col gap-4">
         <div className="panel-glass p-4">
           <ImageUploadPanel
-            imageUrl={imageUrl}
-            onImageLoad={handleImageLoad}
-            onClear={handleClear}
+            imageUrl={imageA.url}
+            onImageLoad={imageA.load}
+            onClear={imageA.clear}
             label={activeTab === "frequency" ? "Low Pass (A)" : "Source Image"}
           />
         </div>
         {activeTab === "frequency" && (
           <div className="panel-glass p-4">
             <ImageUploadPanel
-              imageUrl={imageBUrl}
-              onImageLoad={handleImageBLoad}
-              onClear={handleImageBClear}
+              imageUrl={imageB.url}
+              onImageLoad={imageB.load}
+              onClear={imageB.clear}
               label="High Pass (B)"
             />
           </div>
@@ -149,16 +138,16 @@ const Index = () => {
           <div className="mt-3 space-y-2 text-[11px] text-muted-foreground font-mono">
             <div className="flex justify-between">
               <span>Width</span>
-              <span className="text-foreground/70">{imageData.width}px</span>
+              <span className="text-foreground/70">{imageA.data.width}px</span>
             </div>
             <div className="flex justify-between">
               <span>Height</span>
-              <span className="text-foreground/70">{imageData.height}px</span>
+              <span className="text-foreground/70">{imageA.data.height}px</span>
             </div>
             <div className="h-px bg-border/30" />
             <div className="flex justify-between">
               <span>Pixels</span>
-              <span className="text-foreground/70">{(imageData.width * imageData.height).toLocaleString()}</span>
+              <span className="text-foreground/70">{(imageA.data.width * imageA.data.height).toLocaleString()}</span>
             </div>
           </div>
         </div>

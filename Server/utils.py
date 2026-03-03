@@ -11,7 +11,7 @@ def _convolve_2d(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     kH, kW = kernel.shape
     pad_h, pad_w = kH // 2, kW // 2
     
-    # 1. Pad the image exactly like you did before
+    # Adds a border to the image by repeating the edge pixels.
     padded = np.pad(image, ((pad_h, pad_h), (pad_w, pad_w)), mode='edge')
     
     # 2. Extract ALL sliding windows at once. 
@@ -19,16 +19,17 @@ def _convolve_2d(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     windows = sliding_window_view(padded, (kH, kW))
     
     # 3. Multiply all windows by the kernel and sum across the window dimensions (axes 2 and 3)
-    # This single line replaces both of your 'for' loops!
     output = np.sum(windows * kernel, axis=(2, 3))
     
     return output.astype(np.float32)
 
 # Public convolution - works on GRAY (2D) or RGB (H,W,3)
 def convolve(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
-    if len(image.shape) == 2:
+    if len(image.shape) == 2: # If the image is grayscale, just run the 2D convolution once.
         return _convolve_2d(image, kernel)
     if len(image.shape) == 3 and image.shape[2] == 3:
+        # If it's RGB, it creates an empty image and runs the convolution three times—
+        # once for Red, once for Green, and once for Blue.
         output = np.zeros_like(image, dtype=np.float32)
         for c in range(3):
             output[:, :, c] = _convolve_2d(image[:, :, c], kernel)
@@ -55,7 +56,7 @@ def to_grayscale(img: np.ndarray) -> np.ndarray:
 # Base64 converter
 def image_to_base64(img: np.ndarray) -> str:
     if len(img.shape) == 2:
-        pil_img = Image.fromarray(img, mode='L')
+        pil_img = Image.fromarray(img, mode='L') # Converts the NumPy numbers back into a viewable Image object.
     else:
         pil_img = Image.fromarray(img)
     buff = io.BytesIO()

@@ -13,7 +13,6 @@ export function cloneImageData(src: ImageData): ImageData {
   return new ImageData(new Uint8ClampedArray(src.data), src.width, src.height);
 }
 
-
 export function loadImageToCanvas(file: File | string): Promise<HTMLCanvasElement> {
   return new Promise((resolve) => {
     const img = new Image();

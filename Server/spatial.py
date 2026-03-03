@@ -7,7 +7,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 def gaussian_kernel(size: int, sigma: float = 1.0) -> np.ndarray:
     kernel = np.zeros((size, size), dtype=np.float32)
     center = size // 2
-    s = 2 * sigma ** 2
+    s = 2 * sigma ** 2 # The denominator in the Gaussian formula, which controls the spread of the bell curve.
     total = 0.0
     for i in range(size):
         for j in range(size):
