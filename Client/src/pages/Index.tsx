@@ -5,9 +5,10 @@ import SpatialFiltersTab from "@/components/SpatialFiltersTab";
 import EdgeDetectionTab from "@/components/EdgeDetectionTab";
 import HistogramsTab from "@/components/HistogramsTab";
 import FrequencyTab from "@/components/FrequencyTab";
+import ActiveContourTab from "@/components/ActiveContourTab";
 import LandingHero from "@/components/LandingHero";
 import { loadImageToCanvas, getImageData } from "@/lib/imageProcessing";
-import { Sliders, ScanLine, BarChart3, Waves } from "lucide-react";
+import { Sliders, ScanLine, BarChart3, Waves, Spline } from "lucide-react";
 
 const useImageUpload = (label: string) => {
   const [url, setUrl] = useState<string | null>(null);
@@ -15,15 +16,12 @@ const useImageUpload = (label: string) => {
   const [data, setData] = useState<ImageData | null>(null);
 
   const load = useCallback(async (file: File) => {
-    // 1. Create Preview URL
     const objectUrl = URL.createObjectURL(file);
     setUrl(objectUrl);
 
-    // 2. Get Metadata (Width/Height)
     const canvas = await loadImageToCanvas(file);
     setData(getImageData(canvas));
 
-    // 3. Upload to Backend
     const formData = new FormData();
     formData.append('file', file);
 
@@ -50,13 +48,10 @@ const useImageUpload = (label: string) => {
 };
 
 const Index = () => {
-  // Call the hook for Image A and Image B
   const imageA = useImageUpload("Image A");
   const imageB = useImageUpload("Image B");
   const [activeTab, setActiveTab] = useState("spatial");
 
-
-  // Initial Landing State check
   if (!imageA.data) {
     return <LandingHero onImageLoad={imageA.load} />;
   }
@@ -92,7 +87,11 @@ const Index = () => {
             <TabsTrigger value="frequency" className="tab-trigger-modern">
               <Waves size={12} /> Frequency & Hybrid
             </TabsTrigger>
+            <TabsTrigger value="contour" className="tab-trigger-modern">
+              <Spline size={12} /> Active Contour
+            </TabsTrigger>
           </TabsList>
+
           <div className="flex-1 panel-glass p-5 min-h-0">
             <TabsContent value="spatial" className="h-full m-0">
               <SpatialFiltersTab imageId={imageA.id} />
@@ -104,10 +103,10 @@ const Index = () => {
               <HistogramsTab sourceData={imageA.data} imageId={imageA.id} />
             </TabsContent>
             <TabsContent value="frequency" className="h-full m-0">
-              <FrequencyTab
-                imageIdA={imageA.id}
-                imageIdB={imageB.id}
-              />
+              <FrequencyTab imageIdA={imageA.id} imageIdB={imageB.id} />
+            </TabsContent>
+            <TabsContent value="contour" className="h-full m-0">
+              <ActiveContourTab imageId={imageA.id} imageUrl={imageA.url} />
             </TabsContent>
           </div>
         </Tabs>

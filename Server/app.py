@@ -9,6 +9,7 @@ from spatial import add_noise, apply_filter
 from edge import apply_edge
 from fft_filters_hybrid import apply_fft_filter, create_hybrid
 from histogram import process_histogram
+from snake import run_snake
 
 app = FastAPI(title="Image Equalizer Backend")
 
@@ -44,6 +45,17 @@ class HybridParams(BaseModel):
 class HistogramParams(BaseModel):
     mode: str    # "gray" | "rgb"
     action: str  # "none" | "equalize" | "normalize"
+
+class SnakeParams(BaseModel):
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    alpha: float = 0.1
+    beta: float = 0.1
+    gamma: float = 1.0
+    max_iterations: int = 300
+    adaptive_weights: bool = True
 
 @app.post("/upload")
 async def upload_image(file: UploadFile = File(...)):
@@ -133,3 +145,32 @@ async def apply_histogram(
 
     result = process_histogram(images[image_id], params.mode, params.action)
     return result
+
+@app.post("/apply_snake")
+async def apply_snake(
+    image_id: str = Query(...),
+    params: SnakeParams = Body(...)
+):
+    if image_id not in images:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    img = images[image_id]
+
+    result = run_snake(
+        img_rgb=img,
+        x1=params.x1,
+        y1=params.y1,
+        x2=params.x2,
+        y2=params.y2,
+        alpha=params.alpha,
+        beta=params.beta,
+        gamma=params.gamma,
+        max_iterations=params.max_iterations,
+        adaptive_weights=params.adaptive_weights,
+    )
+
+    return {
+        "result_image":    image_to_base64(result["result_image"]),
+        "initial_contour": result["initial_contour"],
+        "final_contour":   result["final_contour"],
+    }
