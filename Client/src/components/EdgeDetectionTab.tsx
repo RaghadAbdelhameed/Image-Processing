@@ -3,6 +3,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import ProcessingOverlay from "./ProcessingOverlay";
 import { ImageIcon, Play } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
 
 interface Props {
   imageId: string | null;
@@ -10,6 +11,9 @@ interface Props {
 
 export default function EdgeDetectionTab({ imageId }: Props) {
   const [method, setMethod] = useState("sobel");
+  const [cannyMode, setCannyMode] = useState("automatic");
+  const [lowThreshold, setLowThreshold] = useState(50);
+  const [highThreshold, setHighThreshold] = useState(150);
   const [isProcessing, setIsProcessing] = useState(false);
   const [results, setResults] = useState<{ url: string; label: string }[]>([]);
 
@@ -17,13 +21,22 @@ export default function EdgeDetectionTab({ imageId }: Props) {
     if (!imageId) return;
 
     setIsProcessing(true);
-    setResults([]); // clear previous results
+    setResults([]);
 
     try {
       const response = await fetch(`http://localhost:8000/apply_edge?image_id=${imageId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ method }),
+        body: JSON.stringify({
+          method,
+          ...(method === "canny" && {
+            canny_mode: cannyMode,
+            ...(cannyMode === "manual" && {
+              low_threshold: lowThreshold,
+              high_threshold: highThreshold,
+            }),
+          }),
+        }),
       });
 
       if (!response.ok) throw new Error("Failed to detect edges");
@@ -59,7 +72,6 @@ export default function EdgeDetectionTab({ imageId }: Props) {
       setResults(newResults);
     } catch (error) {
       console.error("Edge detection error:", error);
-      // TODO: show toast/error message to user
     } finally {
       setIsProcessing(false);
     }
@@ -72,7 +84,7 @@ export default function EdgeDetectionTab({ imageId }: Props) {
     <div className="flex flex-col h-full gap-4 relative">
       <ProcessingOverlay isProcessing={isProcessing} label="Detecting edges..." />
 
-      <div className="flex gap-4 items-end">
+      <div className="flex gap-4 items-end flex-wrap">
         <div className="control-group min-w-[160px]">
           <span className="control-label">Edge Mask</span>
           <Select value={method} onValueChange={setMethod}>
@@ -87,6 +99,44 @@ export default function EdgeDetectionTab({ imageId }: Props) {
             </SelectContent>
           </Select>
         </div>
+
+        {isCanny && (
+          <>
+            <div className="control-group min-w-[160px]">
+              <span className="control-label">Canny Mode</span>
+              <Select value={cannyMode} onValueChange={setCannyMode}>
+                <SelectTrigger className="h-8 text-xs bg-background/40 border-border/40 rounded-lg">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="automatic">Automatic</SelectItem>
+                  <SelectItem value="manual">Manual</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {cannyMode === "manual" && (
+              <>
+                <div className="control-group min-w-[140px]">
+                  <span className="control-label">Low Threshold — {lowThreshold}</span>
+                  <Slider
+                    min={0} max={255} step={1}
+                    value={[lowThreshold]}
+                    onValueChange={([v]) => setLowThreshold(v)}
+                  />
+                </div>
+                <div className="control-group min-w-[140px]">
+                  <span className="control-label">High Threshold — {highThreshold}</span>
+                  <Slider
+                    min={0} max={255} step={1}
+                    value={[highThreshold]}
+                    onValueChange={([v]) => setHighThreshold(v)}
+                  />
+                </div>
+              </>
+            )}
+          </>
+        )}
 
         <Button
           onClick={handleApply}

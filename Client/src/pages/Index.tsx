@@ -5,10 +5,11 @@ import SpatialFiltersTab from "@/components/SpatialFiltersTab";
 import EdgeDetectionTab from "@/components/EdgeDetectionTab";
 import HistogramsTab from "@/components/HistogramsTab";
 import FrequencyTab from "@/components/FrequencyTab";
-import ActiveContourTab from "@/components/ActiveContourTab";
+import ActiveContourTab from "@/components/ActivecontourTab";
+import ShapeDetectionTab from "@/components/ShapeDetectionTab";
 import LandingHero from "@/components/LandingHero";
 import { loadImageToCanvas, getImageData } from "@/lib/imageProcessing";
-import { Sliders, ScanLine, BarChart3, Waves, Spline } from "lucide-react";
+import { Sliders, ScanLine, BarChart3, Waves, Spline, Shapes } from "lucide-react";
 
 const useImageUpload = (label: string) => {
   const [url, setUrl] = useState<string | null>(null);
@@ -87,6 +88,9 @@ const Index = () => {
             <TabsTrigger value="frequency" className="tab-trigger-modern">
               <Waves size={12} /> Frequency & Hybrid
             </TabsTrigger>
+            <TabsTrigger value="shapes" className="tab-trigger-modern">
+              <Shapes size={12} /> Shape Detection
+            </TabsTrigger>
             <TabsTrigger value="contour" className="tab-trigger-modern">
               <Spline size={12} /> Active Contour
             </TabsTrigger>
@@ -104,6 +108,9 @@ const Index = () => {
             </TabsContent>
             <TabsContent value="frequency" className="h-full m-0">
               <FrequencyTab imageIdA={imageA.id} imageIdB={imageB.id} />
+            </TabsContent>
+            <TabsContent value="shapes" className="h-full m-0">
+              <ShapeDetectionTab imageId={imageA.id} />
             </TabsContent>
             <TabsContent value="contour" className="h-full m-0">
               <ActiveContourTab imageId={imageA.id} imageUrl={imageA.url} />
