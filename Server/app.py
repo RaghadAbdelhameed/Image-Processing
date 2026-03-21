@@ -15,7 +15,12 @@ app = FastAPI(title="Image Equalizer Backend")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -23,18 +28,28 @@ app.add_middleware(
 
 images = {}
 
+
 class SpatialParams(BaseModel):
     noise_type: str
     filter_type: str
     noise_ratio: float
     kernel_size: int
 
+
+# ── Expanded to carry Canny parameters ──────────────────────────────────────
 class EdgeParams(BaseModel):
     method: str
+    canny_mode: str = "automatic"      # "automatic" | "manual"
+    low_threshold: int = 50            # 0-255, used only in manual mode
+    high_threshold: int = 150          # 0-255, used only in manual mode
+    sigma: float = 1.0                 # Gaussian sigma for Canny
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 class FFTParams(BaseModel):
     filter_type: str
     radius: int
+
 
 class HybridParams(BaseModel):
     image_id_1: str
@@ -42,9 +57,11 @@ class HybridParams(BaseModel):
     radius_low: int
     radius_high: int
 
+
 class HistogramParams(BaseModel):
-    mode: str    # "gray" | "rgb"
-    action: str  # "none" | "equalize" | "normalize"
+    mode: str
+    action: str
+
 
 class SnakeParams(BaseModel):
     x1: int
@@ -56,6 +73,7 @@ class SnakeParams(BaseModel):
     gamma: float = 1.0
     max_iterations: int = 300
     adaptive_weights: bool = True
+
 
 @app.post("/upload")
 async def upload_image(file: UploadFile = File(...)):
@@ -69,76 +87,91 @@ async def upload_image(file: UploadFile = File(...)):
     images[image_id] = img
     return {"image_id": image_id}
 
+
 @app.post("/apply_spatial")
 async def apply_spatial(
     image_id: str = Query(...),
-    params: SpatialParams = Body(...)
+    params: SpatialParams = Body(...),
 ):
     if image_id not in images:
         raise HTTPException(status_code=404, detail="Image not found")
-    
-    img = images[image_id]
-    noisy = add_noise(img, params.noise_type, params.noise_ratio)
+
+    img      = images[image_id]
+    noisy    = add_noise(img, params.noise_type, params.noise_ratio)
     filtered = apply_filter(noisy, params.filter_type, params.kernel_size)
-    
+
     return {
-        "noisy_image": image_to_base64(noisy),
-        "filtered_image": image_to_base64(filtered)
+        "noisy_image":    image_to_base64(noisy),
+        "filtered_image": image_to_base64(filtered),
     }
+
 
 @app.post("/apply_edge")
 async def apply_edge_detection(
     image_id: str = Query(...),
-    params: EdgeParams = Body(...)
+    params: EdgeParams = Body(...),
 ):
     if image_id not in images:
         raise HTTPException(status_code=404, detail="Image not found")
-    img = images[image_id]
+
+    img  = images[image_id]
     gray = to_grayscale(img)
-    results = apply_edge(gray, params.method)
+
+    # ── Pass all Canny params down to apply_edge ─────────────────────────────
+    results = apply_edge(
+        gray,
+        method          = params.method,
+        canny_mode      = params.canny_mode,
+        low_threshold   = params.low_threshold,
+        high_threshold  = params.high_threshold,
+        sigma           = params.sigma,
+    )
+    # ─────────────────────────────────────────────────────────────────────────
+
     response = {}
     if params.method == "canny":
         response["edges"] = image_to_base64(results[0]["image"])
     else:
         for res in results:
-            if res["label"] == "X-Gradient":   response["gx"] = image_to_base64(res["image"])
-            elif res["label"] == "Y-Gradient": response["gy"] = image_to_base64(res["image"])
+            if   res["label"] == "X-Gradient": response["gx"]        = image_to_base64(res["image"])
+            elif res["label"] == "Y-Gradient": response["gy"]        = image_to_base64(res["image"])
             elif res["label"] == "Magnitude":  response["magnitude"] = image_to_base64(res["image"])
+
     return response
+
 
 @app.post("/apply_fft")
 async def apply_fft(params: FFTParams, image_id: str = Query(...)):
     if image_id not in images:
         raise HTTPException(status_code=404, detail="Image not found")
-    
+
     result = apply_fft_filter(images[image_id], params.filter_type, params.radius)
     return {"result_image": image_to_base64(result)}
+
 
 @app.post("/apply_hybrid")
 async def apply_hybrid_endpoint(params: HybridParams):
     if params.image_id_1 not in images or params.image_id_2 not in images:
         raise HTTPException(status_code=404, detail="One or both images not found")
-    
-    img1 = images[params.image_id_1]
-    img2 = images[params.image_id_2]
-    
+
     lp, hp, hybrid = create_hybrid(
-        img1, 
-        img2, 
-        params.radius_low, 
-        params.radius_high
+        images[params.image_id_1],
+        images[params.image_id_2],
+        params.radius_low,
+        params.radius_high,
     )
-    
+
     return {
-        "lp_image": image_to_base64(lp),
-        "hp_image": image_to_base64(hp),
-        "hybrid_image": image_to_base64(hybrid)
+        "lp_image":     image_to_base64(lp),
+        "hp_image":     image_to_base64(hp),
+        "hybrid_image": image_to_base64(hybrid),
     }
+
 
 @app.post("/apply_histogram")
 async def apply_histogram(
     image_id: str = Query(...),
-    params: HistogramParams = Body(...)
+    params: HistogramParams = Body(...),
 ):
     if image_id not in images:
         raise HTTPException(status_code=404, detail="Image not found")
@@ -146,27 +179,26 @@ async def apply_histogram(
     result = process_histogram(images[image_id], params.mode, params.action)
     return result
 
+
 @app.post("/apply_snake")
 async def apply_snake(
     image_id: str = Query(...),
-    params: SnakeParams = Body(...)
+    params: SnakeParams = Body(...),
 ):
     if image_id not in images:
         raise HTTPException(status_code=404, detail="Image not found")
 
-    img = images[image_id]
-
     result = run_snake(
-        img_rgb=img,
-        x1=params.x1,
-        y1=params.y1,
-        x2=params.x2,
-        y2=params.y2,
-        alpha=params.alpha,
-        beta=params.beta,
-        gamma=params.gamma,
-        max_iterations=params.max_iterations,
-        adaptive_weights=params.adaptive_weights,
+        img_rgb        = images[image_id],
+        x1             = params.x1,
+        y1             = params.y1,
+        x2             = params.x2,
+        y2             = params.y2,
+        alpha          = params.alpha,
+        beta           = params.beta,
+        gamma          = params.gamma,
+        max_iterations = params.max_iterations,
+        adaptive_weights = params.adaptive_weights,
     )
 
     return {
