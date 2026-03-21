@@ -5,7 +5,7 @@ import SpatialFiltersTab from "@/components/SpatialFiltersTab";
 import EdgeDetectionTab from "@/components/EdgeDetectionTab";
 import HistogramsTab from "@/components/HistogramsTab";
 import FrequencyTab from "@/components/FrequencyTab";
-import ActiveContourTab from "@/components/ActivecontourTab";
+import ActiveContourTab from "@/components/ActiveContourTab";
 import ShapeDetectionTab from "@/components/ShapeDetectionTab";
 import LandingHero from "@/components/LandingHero";
 import { loadImageToCanvas, getImageData } from "@/lib/imageProcessing";

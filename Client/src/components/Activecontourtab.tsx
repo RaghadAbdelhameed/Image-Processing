@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Loader2, Play, RotateCcw, MousePointer2, Move } from "lucide-react";
+import { Loader2, Play, RotateCcw, MousePointer2, Move, ScanSearch } from "lucide-react";
 
 const API = "http://localhost:8000";
 
@@ -9,6 +9,12 @@ interface SnakeResult {
   result_image: string;
   initial_contour: ContourPoint[];
   final_contour: ContourPoint[];
+}
+
+interface ContourAnalysis {
+  chain_code: number[];
+  perimeter: number;
+  area: number;
 }
 
 interface Rect { x1: number; y1: number; x2: number; y2: number }
@@ -94,11 +100,15 @@ export default function ActiveContourTab({ imageId, imageUrl }: Props) {
   const [imgSize,   setImgSize]   = useState({ w: 0, h: 0 });
   const [dispSize,  setDispSize]  = useState({ w: 0, h: 0 });
 
+  const [analysis,       setAnalysis]       = useState<ContourAnalysis | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+
   // reset when image changes
   useEffect(() => {
     setRect(null);
     setResult(null);
     setError(null);
+    setAnalysis(null);
   }, [imageId]);
 
   const [alpha,    setAlpha]    = useState(0.1);
@@ -175,6 +185,28 @@ export default function ActiveContourTab({ imageId, imageUrl }: Props) {
     }
   };
 
+  // ── contour analysis ──────────────────────────────────────────────────────
+  const handleAnalysis = async () => {
+    if (!imageId || !result) return;
+    setAnalysisLoading(true);
+    try {
+      const res = await fetch(`${API}/contour_analysis?image_id=${imageId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contour: result.final_contour,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data: ContourAnalysis = await res.json();
+      setAnalysis(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Analysis failed");
+    } finally {
+      setAnalysisLoading(false);
+    }
+  };
+
   const canRun = !!imageId && !!rect && !loading;
 
   const scaleContour = (pts: ContourPoint[]) =>
@@ -248,12 +280,48 @@ export default function ActiveContourTab({ imageId, imageUrl }: Props) {
               : <><Play size={12} />Run Snake</>}
           </button>
           <button
-            onClick={() => { setRect(null); setResult(null); setError(null); }}
+            onClick={handleAnalysis}
+            disabled={!result || analysisLoading}
+            className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-accent text-accent-foreground text-xs font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
+          >
+            {analysisLoading
+              ? <><Loader2 size={12} className="animate-spin" />Analyzing…</>
+              : <><ScanSearch size={12} />Contour Analysis</>}
+          </button>
+          <button
+            onClick={() => { setRect(null); setResult(null); setError(null); setAnalysis(null); }}
             className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             <RotateCcw size={11} />Reset
           </button>
         </div>
+
+        {/* Analysis results */}
+        {analysis && (
+          <div className="flex flex-col gap-2 p-3 rounded-lg bg-card/60 border border-border/40">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Contour Analysis
+            </span>
+            <div className="space-y-1.5 text-[11px] font-mono">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Perimeter</span>
+                <span className="text-foreground">{analysis.perimeter.toFixed(2)} px</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Area</span>
+                <span className="text-foreground">{analysis.area.toFixed(2)} px²</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-muted-foreground">Chain Code</span>
+                <div className="text-[9px] text-foreground/70 max-h-16 overflow-y-auto break-all leading-relaxed bg-background/50 rounded p-1.5">
+                  {analysis.chain_code.length > 100
+                    ? analysis.chain_code.slice(0, 100).join(" ") + " …"
+                    : analysis.chain_code.join(" ")}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {error && (
           <p className="text-[10px] text-red-400 leading-relaxed break-words">{error}</p>
