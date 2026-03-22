@@ -9,6 +9,7 @@ from spatial import add_noise, apply_filter
 from edge import apply_edge
 from fft_filters_hybrid import apply_fft_filter, create_hybrid
 from histogram import process_histogram
+from ellipse_detection import ArcSupportEllipseDetector
 from snake import run_snake
 
 app = FastAPI(title="Image Equalizer Backend")
@@ -61,7 +62,13 @@ class HybridParams(BaseModel):
 class HistogramParams(BaseModel):
     mode: str
     action: str
+    
 
+class EllipseParams(BaseModel):
+    edge_thresh: int = 50      # 10-200
+    tr_thresh: float = 0.5     # 0.1-1.0
+    min_size: int = 25         # minimum arc length
+    
 
 class SnakeParams(BaseModel):
     x1: int
@@ -179,6 +186,26 @@ async def apply_histogram(
     result = process_histogram(images[image_id], params.mode, params.action)
     return result
 
+
+@app.post("/apply_ellipse")
+async def apply_ellipse_detection(
+    image_id: str = Query(...),
+    params: EllipseParams = Body(...),
+):
+    if image_id not in images:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    img = images[image_id]                     # RGB numpy array
+    detector = ArcSupportEllipseDetector()
+    
+    result = detector.run(
+        img,
+        edge_thresh=params.edge_thresh,
+        tr_thresh=params.tr_thresh,
+        min_size=params.min_size,
+    )
+    
+    return result
 
 @app.post("/apply_snake")
 async def apply_snake(

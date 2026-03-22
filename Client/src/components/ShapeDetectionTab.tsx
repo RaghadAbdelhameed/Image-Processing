@@ -27,10 +27,10 @@ export default function ShapeDetectionTab({ imageId }: Props) {
   const [circlesMinRadius, setCirclesMinRadius] = useState(10);
   const [circlesMaxRadius, setCirclesMaxRadius] = useState(100);
 
-  // Ellipses defaults
-  const [ellipsesMinArea, setEllipsesMinArea] = useState(100);
-  const [ellipsesMaxArea, setEllipsesMaxArea] = useState(50000);
-  const [ellipsesMinAspect, setEllipsesMinAspect] = useState(0.2);
+  // Ellipses (Arc-Support) defaults 
+  const [edgeThresh, setEdgeThresh] = useState(50);     // 10–200
+  const [trThresh, setTrThresh] = useState(0.5);        // 0.1–1.0
+  const [minSize, setMinSize] = useState(25);           // 10–100
 
   const handleApply = async () => {
     if (!imageId) return;
@@ -38,37 +38,56 @@ export default function ShapeDetectionTab({ imageId }: Props) {
     setResults([]);
 
     try {
-      const params: Record<string, unknown> = { shape };
+      if (shape === "ellipses") {
+        const response = await fetch(`http://localhost:8000/apply_ellipse?image_id=${imageId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            edge_thresh: edgeThresh,
+            tr_thresh: trThresh,
+            min_size: minSize,
+          }),
+        });
 
-      if (shape === "lines") {
-        params.threshold = linesThreshold;
-        params.min_line_length = linesMinLength;
-        params.max_line_gap = linesMaxGap;
-      } else if (shape === "circles") {
-        params.dp = circlesDp;
-        params.min_dist = circlesMinDist;
-        params.param1 = circlesParam1;
-        params.param2 = circlesParam2;
-        params.min_radius = circlesMinRadius;
-        params.max_radius = circlesMaxRadius;
-      } else if (shape === "ellipses") {
-        params.min_area = ellipsesMinArea;
-        params.max_area = ellipsesMaxArea;
-        params.min_aspect_ratio = ellipsesMinAspect;
+        if (!response.ok) throw new Error("Ellipse detection failed");
+
+        const data = await response.json();
+
+        setResults([
+          {
+            url: `data:image/png;base64,${data.result_image}`,
+            label: `Detected Ellipses (${data.num_ellipses} found)`,
+          },
+        ]);
+      } else {
+        const params: Record<string, unknown> = { shape };
+
+        if (shape === "lines") {
+          params.threshold = linesThreshold;
+          params.min_line_length = linesMinLength;
+          params.max_line_gap = linesMaxGap;
+        } else if (shape === "circles") {
+          params.dp = circlesDp;
+          params.min_dist = circlesMinDist;
+          params.param1 = circlesParam1;
+          params.param2 = circlesParam2;
+          params.min_radius = circlesMinRadius;
+          params.max_radius = circlesMaxRadius;
+        }
+
+        const response = await fetch(`http://localhost:8000/detect_shapes?image_id=${imageId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(params),
+        });
+
+        if (!response.ok) throw new Error("Shape detection failed");
+
+        const data = await response.json();
+        setResults([
+          { url: `data:image/png;base64,${data.result}`, label: `Detected ${shape.charAt(0).toUpperCase() + shape.slice(1)}` },
+        ]);
       }
-
-      const response = await fetch(`http://localhost:8000/detect_shapes?image_id=${imageId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(params),
-      });
-
-      if (!response.ok) throw new Error("Shape detection failed");
-
-      const data = await response.json();
-      setResults([
-        { url: `data:image/png;base64,${data.result}`, label: `Detected ${shape.charAt(0).toUpperCase() + shape.slice(1)}` },
-      ]);
     } catch (error) {
       console.error("Shape detection error:", error);
     } finally {
@@ -90,7 +109,7 @@ export default function ShapeDetectionTab({ imageId }: Props) {
             <SelectContent>
               <SelectItem value="lines">Lines</SelectItem>
               <SelectItem value="circles">Circles</SelectItem>
-              <SelectItem value="ellipses">Ellipses</SelectItem>
+              <SelectItem value="ellipses">Ellipses (Arc-Support)</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -141,19 +160,20 @@ export default function ShapeDetectionTab({ imageId }: Props) {
           </>
         )}
 
+        
         {shape === "ellipses" && (
           <>
-            <div className="control-group min-w-[130px]">
-              <span className="control-label">Min Area — {ellipsesMinArea}</span>
-              <Slider min={10} max={5000} step={50} value={[ellipsesMinArea]} onValueChange={([v]) => setEllipsesMinArea(v)} />
+            <div className="control-group min-w-[150px]">
+              <span className="control-label">Edge Threshold — {edgeThresh}</span>
+              <Slider min={10} max={200} step={5} value={[edgeThresh]} onValueChange={([v]) => setEdgeThresh(v)} />
             </div>
             <div className="control-group min-w-[130px]">
-              <span className="control-label">Max Area — {ellipsesMaxArea}</span>
-              <Slider min={1000} max={100000} step={500} value={[ellipsesMaxArea]} onValueChange={([v]) => setEllipsesMaxArea(v)} />
+              <span className="control-label">Inlier Ratio (Strictness) — {trThresh.toFixed(2)}</span>
+              <Slider min={0.1} max={1} step={0.05} value={[trThresh]} onValueChange={([v]) => setTrThresh(v)} />
             </div>
             <div className="control-group min-w-[130px]">
-              <span className="control-label">Min Aspect — {ellipsesMinAspect.toFixed(2)}</span>
-              <Slider min={0.05} max={1} step={0.05} value={[ellipsesMinAspect]} onValueChange={([v]) => setEllipsesMinAspect(v)} />
+              <span className="control-label">Min Arc Size — {minSize}</span>
+              <Slider min={10} max={100} step={5} value={[minSize]} onValueChange={([v]) => setMinSize(v)} />
             </div>
           </>
         )}
