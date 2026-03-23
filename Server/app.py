@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uuid
 import cv2
+from typing import List
 from utils import image_to_base64, to_grayscale, normalize_img
 from spatial import add_noise, apply_filter
 from edge import apply_edge
@@ -11,6 +12,7 @@ from fft_filters_hybrid import apply_fft_filter, create_hybrid
 from histogram import process_histogram
 from ellipse_detection import ArcSupportEllipseDetector
 from snake import run_snake
+from contour_analysis import analyze_contour
 
 app = FastAPI(title="Image Equalizer Backend")
 
@@ -37,14 +39,12 @@ class SpatialParams(BaseModel):
     kernel_size: int
 
 
-# ── Expanded to carry Canny parameters ──────────────────────────────────────
 class EdgeParams(BaseModel):
     method: str
-    canny_mode: str = "automatic"      # "automatic" | "manual"
-    low_threshold: int = 50            # 0-255, used only in manual mode
-    high_threshold: int = 150          # 0-255, used only in manual mode
-    sigma: float = 1.0                 # Gaussian sigma for Canny
-# ─────────────────────────────────────────────────────────────────────────────
+    canny_mode: str = "automatic"
+    low_threshold: int = 50
+    high_threshold: int = 150
+    sigma: float = 1.0
 
 
 class FFTParams(BaseModel):
@@ -62,13 +62,13 @@ class HybridParams(BaseModel):
 class HistogramParams(BaseModel):
     mode: str
     action: str
-    
+
 
 class EllipseParams(BaseModel):
-    edge_thresh: int = 50      # 10-200
-    tr_thresh: float = 0.5     # 0.1-1.0
-    min_size: int = 25         # minimum arc length
-    
+    edge_thresh: int = 50
+    tr_thresh: float = 0.5
+    min_size: int = 25
+
 
 class SnakeParams(BaseModel):
     x1: int
@@ -80,6 +80,10 @@ class SnakeParams(BaseModel):
     gamma: float = 1.0
     max_iterations: int = 300
     adaptive_weights: bool = True
+
+
+class ContourAnalysisParams(BaseModel):
+    contour: List[List[float]]   # final_contour from run_snake → list of [x, y]
 
 
 @app.post("/upload")
@@ -124,16 +128,14 @@ async def apply_edge_detection(
     img  = images[image_id]
     gray = to_grayscale(img)
 
-    # ── Pass all Canny params down to apply_edge ─────────────────────────────
     results = apply_edge(
         gray,
-        method          = params.method,
-        canny_mode      = params.canny_mode,
-        low_threshold   = params.low_threshold,
-        high_threshold  = params.high_threshold,
-        sigma           = params.sigma,
+        method         = params.method,
+        canny_mode     = params.canny_mode,
+        low_threshold  = params.low_threshold,
+        high_threshold = params.high_threshold,
+        sigma          = params.sigma,
     )
-    # ─────────────────────────────────────────────────────────────────────────
 
     response = {}
     if params.method == "canny":
@@ -195,17 +197,18 @@ async def apply_ellipse_detection(
     if image_id not in images:
         raise HTTPException(status_code=404, detail="Image not found")
 
-    img = images[image_id]                     # RGB numpy array
+    img = images[image_id]
     detector = ArcSupportEllipseDetector()
-    
+
     result = detector.run(
         img,
         edge_thresh=params.edge_thresh,
         tr_thresh=params.tr_thresh,
         min_size=params.min_size,
     )
-    
+
     return result
+
 
 @app.post("/apply_snake")
 async def apply_snake(
@@ -216,15 +219,15 @@ async def apply_snake(
         raise HTTPException(status_code=404, detail="Image not found")
 
     result = run_snake(
-        img_rgb        = images[image_id],
-        x1             = params.x1,
-        y1             = params.y1,
-        x2             = params.x2,
-        y2             = params.y2,
-        alpha          = params.alpha,
-        beta           = params.beta,
-        gamma          = params.gamma,
-        max_iterations = params.max_iterations,
+        img_rgb          = images[image_id],
+        x1               = params.x1,
+        y1               = params.y1,
+        x2               = params.x2,
+        y2               = params.y2,
+        alpha            = params.alpha,
+        beta             = params.beta,
+        gamma            = params.gamma,
+        max_iterations   = params.max_iterations,
         adaptive_weights = params.adaptive_weights,
     )
 
@@ -233,3 +236,15 @@ async def apply_snake(
         "initial_contour": result["initial_contour"],
         "final_contour":   result["final_contour"],
     }
+
+
+@app.post("/contour_analysis")
+async def contour_analysis(
+    image_id: str = Query(...),
+    params: ContourAnalysisParams = Body(...),
+):
+    if image_id not in images:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    result = analyze_contour(params.contour)
+    return result
