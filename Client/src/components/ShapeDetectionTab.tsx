@@ -23,7 +23,7 @@ export default function ShapeDetectionTab({ imageId }: Props) {
   const [circlesDp, setCirclesDp] = useState(1.2);
   const [circlesMinDist, setCirclesMinDist] = useState(30);
   const [circlesParam1, setCirclesParam1] = useState(50);
-  const [circlesParam2, setCirclesParam2] = useState(30);
+  const [circlesParam2, setCirclesParam2] = useState(55);
   const [circlesMinRadius, setCirclesMinRadius] = useState(10);
   const [circlesMaxRadius, setCirclesMaxRadius] = useState(100);
 
@@ -81,7 +81,30 @@ export default function ShapeDetectionTab({ imageId }: Props) {
             label: `Detected Lines` 
           },
         ]);
-      } else {
+      } else if (shape === "circles") {
+        const response = await fetch(`http://localhost:8000/apply_circle?image_id=${imageId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            dp: circlesDp,
+            min_dist: circlesMinDist,
+            param1: circlesParam1,
+            param2: circlesParam2,
+            min_radius: circlesMinRadius,
+            max_radius: circlesMaxRadius,
+          }),
+        });
+
+        if (!response.ok) throw new Error("Circle detection failed");
+
+        const data = await response.json();
+        setResults([
+          { 
+            url: `data:image/png;base64,${data.result}`, 
+            label: `Detected Circles` 
+          },
+        ]);
+      }else {
         // Generic handler for other shapes (e.g., circles if implemented later)
         const params: Record<string, unknown> = { shape };
         if (shape === "circles") {
@@ -165,7 +188,7 @@ export default function ShapeDetectionTab({ imageId }: Props) {
             </div>
             <div className="control-group min-w-[110px]">
               <span className="control-label">Param2 — {circlesParam2}</span>
-              <Slider min={5} max={100} step={5} value={[circlesParam2]} onValueChange={([v]) => setCirclesParam2(v)} />
+              <Slider min={10} max={100} step={1} value={[circlesParam2]} onValueChange={([v]) => setCirclesParam2(v)} />
             </div>
             <div className="control-group min-w-[110px]">
               <span className="control-label">Min R — {circlesMinRadius}</span>

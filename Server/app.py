@@ -11,6 +11,7 @@ from edge import apply_edge
 from fft_filters_hybrid import apply_fft_filter, create_hybrid
 from histogram import process_histogram
 from line_detection import manual_hough_transform, draw_lines_on_image
+from circle_detection import detect_circles_hough, draw_detected_circles
 from ellipse_detection import ArcSupportEllipseDetector
 from snake import run_snake
 from contour_analysis import analyze_contour
@@ -69,6 +70,13 @@ class LineParams(BaseModel):
     rho: float = 1.0
     theta: float = 1.0
 
+class CircleParams(BaseModel):
+    dp: float = 1.2
+    min_dist: int = 30
+    param1: int = 50
+    param2: int = 50
+    min_radius: int = 10
+    max_radius: int = 100
 
 class EllipseParams(BaseModel):
     edge_thresh: int = 50
@@ -216,6 +224,31 @@ async def apply_line_detection(
     result_img = draw_lines_on_image(img, lines)
     
     # Convert back to base64 for the frontend
+    return {"result": image_to_base64(result_img)}
+
+@app.post("/apply_circle")
+async def apply_circle_detection(
+    image_id: str = Query(...),
+    params: CircleParams = Body(...),
+):
+    if image_id not in images:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    img = images[image_id]
+    
+    # Use your functions from cccppp.py
+    circles_matrix, _ = detect_circles_hough(
+        img, 
+        dp=params.dp, 
+        minDist=params.min_dist, 
+        param1=params.param1, 
+        param2=params.param2, 
+        minRadius=params.min_radius, 
+        maxRadius=params.max_radius
+    )
+    
+    result_img = draw_detected_circles(img, circles_matrix)
+    
     return {"result": image_to_base64(result_img)}
 
 @app.post("/apply_ellipse")
