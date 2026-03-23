@@ -15,9 +15,9 @@ export default function ShapeDetectionTab({ imageId }: Props) {
   const [results, setResults] = useState<{ url: string; label: string }[]>([]);
 
   // Lines (Hough) defaults
-  const [linesThreshold, setLinesThreshold] = useState(100);
-  const [linesMinLength, setLinesMinLength] = useState(50);
-  const [linesMaxGap, setLinesMaxGap] = useState(10);
+  const [linesThreshold, setLinesThreshold] = useState(160);
+  const [linesRho, setLinesRho] = useState(1);
+  const [linesTheta, setLinesTheta] = useState(1);
 
   // Circles (Hough) defaults
   const [circlesDp, setCirclesDp] = useState(1.2);
@@ -39,6 +39,7 @@ export default function ShapeDetectionTab({ imageId }: Props) {
 
     try {
       if (shape === "ellipses") {
+        // Keep Ellipse logic as is
         const response = await fetch(`http://localhost:8000/apply_ellipse?image_id=${imageId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -59,14 +60,31 @@ export default function ShapeDetectionTab({ imageId }: Props) {
             label: `Detected Ellipses (${data.num_ellipses} found)`,
           },
         ]);
-      } else {
-        const params: Record<string, unknown> = { shape };
+      } else if (shape === "lines") {
+        // Updated to call /apply_line to match app.py
+        const response = await fetch(`http://localhost:8000/apply_line?image_id=${imageId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            threshold: linesThreshold,
+            rho: linesRho,
+            theta: linesTheta,
+          }),
+        });
 
-        if (shape === "lines") {
-          params.threshold = linesThreshold;
-          params.min_line_length = linesMinLength;
-          params.max_line_gap = linesMaxGap;
-        } else if (shape === "circles") {
+        if (!response.ok) throw new Error("Line detection failed");
+
+        const data = await response.json();
+        setResults([
+          { 
+            url: `data:image/png;base64,${data.result}`, 
+            label: `Detected Lines` 
+          },
+        ]);
+      } else {
+        // Generic handler for other shapes (e.g., circles if implemented later)
+        const params: Record<string, unknown> = { shape };
+        if (shape === "circles") {
           params.dp = circlesDp;
           params.min_dist = circlesMinDist;
           params.param1 = circlesParam1;
@@ -121,12 +139,12 @@ export default function ShapeDetectionTab({ imageId }: Props) {
               <Slider min={10} max={300} step={5} value={[linesThreshold]} onValueChange={([v]) => setLinesThreshold(v)} />
             </div>
             <div className="control-group min-w-[130px]">
-              <span className="control-label">Min Length — {linesMinLength}</span>
-              <Slider min={5} max={200} step={5} value={[linesMinLength]} onValueChange={([v]) => setLinesMinLength(v)} />
+              <span className="control-label">Rho Res — {linesRho}</span>
+              <Slider min={0.5} max={2} step={0.1} value={[linesRho]} onValueChange={([v]) => setLinesRho(v)} />
             </div>
             <div className="control-group min-w-[130px]">
-              <span className="control-label">Max Gap — {linesMaxGap}</span>
-              <Slider min={1} max={50} step={1} value={[linesMaxGap]} onValueChange={([v]) => setLinesMaxGap(v)} />
+              <span className="control-label">Theta Res — {linesTheta}</span>
+              <Slider min={0.5} max={2} step={0.1} value={[linesTheta]} onValueChange={([v]) => setLinesTheta(v)} />
             </div>
           </>
         )}
@@ -160,7 +178,6 @@ export default function ShapeDetectionTab({ imageId }: Props) {
           </>
         )}
 
-        
         {shape === "ellipses" && (
           <>
             <div className="control-group min-w-[150px]">

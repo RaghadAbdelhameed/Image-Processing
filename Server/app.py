@@ -10,6 +10,7 @@ from spatial import add_noise, apply_filter
 from edge import apply_edge
 from fft_filters_hybrid import apply_fft_filter, create_hybrid
 from histogram import process_histogram
+from line_detection import manual_hough_transform, draw_lines_on_image
 from ellipse_detection import ArcSupportEllipseDetector
 from snake import run_snake
 from contour_analysis import analyze_contour
@@ -62,6 +63,11 @@ class HybridParams(BaseModel):
 class HistogramParams(BaseModel):
     mode: str
     action: str
+
+class LineParams(BaseModel):
+    threshold: int = 100
+    rho: float = 1.0
+    theta: float = 1.0
 
 
 class EllipseParams(BaseModel):
@@ -188,6 +194,29 @@ async def apply_histogram(
     result = process_histogram(images[image_id], params.mode, params.action)
     return result
 
+@app.post("/apply_line")
+async def apply_line_detection(
+    image_id: str = Query(...),
+    params: LineParams = Body(...),
+):
+    if image_id not in images:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    img = images[image_id]
+    
+    # Run your manual transform with provided params
+    lines = manual_hough_transform(
+        img, 
+        threshold=params.threshold, 
+        rho_res=params.rho, 
+        theta_res=params.theta
+    )
+    
+    # Generate the result image
+    result_img = draw_lines_on_image(img, lines)
+    
+    # Convert back to base64 for the frontend
+    return {"result": image_to_base64(result_img)}
 
 @app.post("/apply_ellipse")
 async def apply_ellipse_detection(
