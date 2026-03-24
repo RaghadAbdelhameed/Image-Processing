@@ -1,73 +1,56 @@
 # =============================================================================
-#   Pure NumPy Canny Edge Detection - Optimized Version
-#   (Thresholds: low=0.05, high=0.15, sigma=1.0)
+#   Pure NumPy Canny Edge Detection 
 # =============================================================================
 
 import numpy as np
-from tkinter import Tk, filedialog
-from PIL import Image
-import matplotlib.pyplot as plt
-import os
-
-# ────────────────────────────────────────────────
-#                  Pure NumPy Canny
-# ────────────────────────────────────────────────
-
-
-def gaussian_kernel(size: int, sigma: float = 1.0) -> np.ndarray:
-    """Create 2D Gaussian kernel."""
-    ax = np.linspace(-(size - 1) / 2.0, (size - 1) / 2.0, size)
-    xx, yy = np.meshgrid(ax, ax)
-    kernel = np.exp(-(xx**2 + yy**2) / (2.0 * sigma**2))
-    return kernel / np.sum(kernel)
-
-
-def convolve2d(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
-    """Manual 2D convolution with reflect padding."""
-    h, w = image.shape
-    kh, kw = kernel.shape
-    pad_h, pad_w = kh // 2, kw // 2
-
-    padded = np.pad(image, ((pad_h, pad_h), (pad_w, pad_w)), mode="reflect")
-    output = np.zeros((h, w), dtype=np.float64)
-
-    for i in range(h):
-        for j in range(w):
-            output[i, j] = np.sum(padded[i : i + kh, j : j + kw] * kernel)
-
-    return output
+from utils import gaussian_kernel, convolve
 
 
 def non_max_suppression(magnitude: np.ndarray, angle: np.ndarray) -> np.ndarray:
-    """Non-maximum suppression — 4 quantized directions."""
-    h, w = magnitude.shape
-    suppressed = np.zeros_like(magnitude, dtype=np.float64)
-
+    """
+    Fully vectorized NMS — zero Python loops over pixels.
+    Uses np.where and array slicing instead of per-pixel iteration.
+    """
     angle = angle % 180
 
-    for i in range(1, h - 1):
-        for j in range(1, w - 1):
-            ang = angle[i, j]
+    h, w = magnitude.shape
+    suppressed = np.zeros_like(magnitude)
 
-            # Horizontal
-            if (0 <= ang < 22.5) or (157.5 <= ang <= 180):
-                q = magnitude[i, j + 1]
-                r = magnitude[i, j - 1]
-            # Diagonal /
-            elif 22.5 <= ang < 67.5:
-                q = magnitude[i + 1, j - 1]
-                r = magnitude[i - 1, j + 1]
-            # Vertical
-            elif 67.5 <= ang < 112.5:
-                q = magnitude[i + 1, j]
-                r = magnitude[i - 1, j]
-            # Diagonal \
-            else:
-                q = magnitude[i + 1, j + 1]
-                r = magnitude[i - 1, j - 1]
+    # Pad magnitude so boundary slices are safe
+    mag_pad = np.pad(magnitude, 1, mode='constant', constant_values=0)
 
-            if magnitude[i, j] >= q and magnitude[i, j] >= r:
-                suppressed[i, j] = magnitude[i, j]
+    # ── Pre-fetch all 8 neighbours at once ───────────────────────────────────
+    # Each is a (h, w) array — the neighbour value for every pixel simultaneously
+    n_0  = mag_pad[1:h+1, 2:w+2]   # right
+    n_45 = mag_pad[2:h+2, 0:w  ]   # bottom-left
+    n_90 = mag_pad[2:h+2, 1:w+1]   # bottom
+    n_135= mag_pad[2:h+2, 2:w+2]   # bottom-right
+    n_180= mag_pad[1:h+1, 0:w  ]   # left
+    n_225= mag_pad[0:h,   0:w  ]   # top-left
+    n_270= mag_pad[0:h,   1:w+1]   # top
+    n_315= mag_pad[0:h,   2:w+2]   # top-right
+
+    # ── Build direction masks (no loop) ──────────────────────────────────────
+    mask_0   = ((angle <  22.5) | (angle >= 157.5))          # horizontal
+    mask_45  = ((angle >= 22.5) & (angle <  67.5))           # diagonal /
+    mask_90  = ((angle >= 67.5) & (angle < 112.5))           # vertical
+    mask_135 = ((angle >= 112.5) & (angle < 157.5))          # diagonal \
+
+    # ── For each direction, select the two neighbours to compare ─────────────
+    # q = forward neighbour, r = backward neighbour
+    q = np.where(mask_0,   n_0,
+        np.where(mask_45,  n_45,
+        np.where(mask_90,  n_90,
+                           n_135)))
+
+    r = np.where(mask_0,   n_180,
+        np.where(mask_45,  n_225,
+        np.where(mask_90,  n_270,
+                           n_315)))
+
+    # ── Keep pixel only if it's a local maximum along its gradient direction ─
+    is_max = (magnitude >= q) & (magnitude >= r)
+    suppressed = np.where(is_max, magnitude, 0.0)
 
     return suppressed
 
@@ -75,39 +58,34 @@ def non_max_suppression(magnitude: np.ndarray, angle: np.ndarray) -> np.ndarray:
 def double_threshold_hysteresis(
     img: np.ndarray, low_ratio: float = 0.05, high_ratio: float = 0.15
 ) -> np.ndarray:
-    """Double threshold + edge tracking by hysteresis."""
-    strong = 255
-    weak = 75
-    
-    # Calculate thresholds based on maximum magnitude
+    """
+    Vectorized double threshold + hysteresis using scipy label-based
+    connected components — no while loop, no per-pixel iteration.
+    """
+    from scipy.ndimage import label
+
     max_magnitude = np.max(img)
-    low_thresh = low_ratio * max_magnitude
+    low_thresh  = low_ratio  * max_magnitude
     high_thresh = high_ratio * max_magnitude
-    
-    edges = np.zeros_like(img, dtype=np.uint8)
-    
-    # Find strong and weak edges
-    strong_i, strong_j = np.where(img >= high_thresh)
-    weak_i, weak_j = np.where((img >= low_thresh) & (img < high_thresh))
-    
-    edges[strong_i, strong_j] = strong
-    edges[weak_i, weak_j] = weak
-    
-    # Hysteresis - propagate strong edges to connected weak edges
-    changed = True
-    while changed:
-        changed = False
-        for i in range(1, img.shape[0] - 1):
-            for j in range(1, img.shape[1] - 1):
-                if edges[i, j] == weak:
-                    # Check 8-neighborhood
-                    if np.any(edges[i - 1:i + 2, j - 1:j + 2] == strong):
-                        edges[i, j] = strong
-                        changed = True
-    
-    # Remove remaining weak edges
-    edges[edges == weak] = 0
-    return edges
+
+    # ── Classify pixels ──────────────────────────────────────────────────────
+    strong = img >= high_thresh
+    weak   = (img >= low_thresh) & (img < high_thresh)
+
+    # ── Connected components on ALL edge pixels (strong + weak) ──────────────
+    # Any component that contains at least one strong pixel is a real edge
+    combined         = strong | weak
+    structure        = np.ones((3, 3), dtype=int)   # 8-connectivity
+    labeled, n_labels = label(combined, structure=structure)
+
+    # ── Find which component labels contain a strong pixel ───────────────────
+    strong_labels    = np.unique(labeled[strong])
+    strong_labels    = strong_labels[strong_labels != 0]   # exclude background
+
+    # ── Keep only pixels belonging to strong-connected components ────────────
+    final = np.isin(labeled, strong_labels)
+
+    return (final * 255).astype(np.uint8)
 
 
 def canny_edge_detection(
@@ -116,117 +94,42 @@ def canny_edge_detection(
     high_ratio: float = 0.15,
     sigma: float = 1.0,
 ) -> np.ndarray:
-    """
-    Pure NumPy Canny edge detector.
-    Optimized thresholds: low_ratio=0.05, high_ratio=0.15
-    """
+    """Pure NumPy Canny — fully vectorized, no Python pixel loops."""
+
     # Convert to grayscale if color
     if image.ndim == 3 and image.shape[2] in (3, 4):
         image = (
-            0.299 * image[..., 0] + 0.587 * image[..., 1] + 0.114 * image[..., 2]
+            0.299 * image[..., 0] +
+            0.587 * image[..., 1] +
+            0.114 * image[..., 2]
         ).astype(np.float64)
     else:
         image = image.astype(np.float64)
-    
-    # Normalize to [0, 1] range
+
+    # Normalize to [0, 1]
     image = image / 255.0
-    
+
     # 1. Gaussian blur
     ksize = int(2 * np.ceil(2 * sigma)) + 1
     if ksize % 2 == 0:
         ksize += 1
-    gauss = gaussian_kernel(ksize, sigma)
-    smoothed = convolve2d(image, gauss)
-    
+    gauss    = gaussian_kernel(ksize, sigma)
+    smoothed = convolve(image, gauss).astype(np.float64)
+
     # 2. Sobel gradients
     sobel_x = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=float)
     sobel_y = np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=float)
-    
-    gx = convolve2d(smoothed, sobel_x)
-    gy = convolve2d(smoothed, sobel_y)
-    
+
+    gx = convolve(smoothed, sobel_x).astype(np.float64)
+    gy = convolve(smoothed, sobel_y).astype(np.float64)
+
     magnitude = np.hypot(gx, gy)
-    angle = np.arctan2(gy, gx) * (180 / np.pi) % 180
-    
-    # 3. Non-maximum suppression
+    angle     = np.arctan2(gy, gx) * (180.0 / np.pi)
+
+    # 3. Non-maximum suppression — vectorized
     nms = non_max_suppression(magnitude, angle)
-    
-    # 4. Double threshold + hysteresis
+
+    # 4. Double threshold + hysteresis — vectorized
     final_edges = double_threshold_hysteresis(nms, low_ratio, high_ratio)
-    
+
     return final_edges.astype(np.uint8)
-
-
-# ────────────────────────────────────────────────
-#                Main Program
-# ────────────────────────────────────────────────
-
-
-def main():
-    # Hide empty tkinter window
-    root = Tk()
-    root.withdraw()
-
-    print("Please select an image file...")
-    file_path = filedialog.askopenfilename(
-        title="Select Image for Canny Edge Detection",
-        filetypes=[
-            ("Common image files", "*.jpg *.jpeg *.png *.bmp *.tiff *.webp"),
-            ("All files", "*.*"),
-        ],
-    )
-
-    if not file_path:
-        print("No file selected. Exiting.")
-        return
-
-    print(f"Selected image: {file_path}")
-
-    try:
-        # Load image
-        pil_img = Image.open(file_path).convert("RGB")
-        img_array = np.array(pil_img)
-
-        print(f"Image shape: {img_array.shape}")
-
-        # Run Canny with optimized thresholds (low=0.05, high=0.15)
-        print("Applying Canny edge detection with thresholds: low=5%, high=15%...")
-        edges = canny_edge_detection(
-            img_array, 
-            low_ratio=0.05, 
-            high_ratio=0.15, 
-            sigma=1.0
-        )
-
-        # Prepare output filename
-        base, ext = os.path.splitext(file_path)
-        output_path = f"{base}_canny_edges{ext}"
-
-        # Save edge map
-        Image.fromarray(edges).save(output_path)
-        print(f"Edge map saved → {output_path}")
-
-        # Display results
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-
-        ax1.imshow(img_array)
-        ax1.set_title("Original Image", fontsize=12, fontweight='bold')
-        ax1.axis("off")
-
-        ax2.imshow(edges, cmap="gray")
-        ax2.set_title("Canny Edges (low=5%, high=15%)", fontsize=12, fontweight='bold')
-        ax2.axis("off")
-
-        plt.tight_layout()
-        plt.show()
-        
-        print("\n✅ Edge detection completed successfully!")
-
-    except Exception as e:
-        print(f"Error occurred: {e}")
-        import traceback
-        traceback.print_exc()
-
-
-if __name__ == "__main__":
-    main()
