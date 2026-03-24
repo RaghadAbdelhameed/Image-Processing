@@ -11,8 +11,11 @@ def non_max_suppression(magnitude: np.ndarray, angle: np.ndarray) -> np.ndarray:
     Fully vectorized NMS — zero Python loops over pixels.
     Uses np.where and array slicing instead of per-pixel iteration.
     """
+    
+    # make all anlges positive and in [0, 180)
     angle = angle % 180
-
+    
+    #get image dimensions
     h, w = magnitude.shape
     suppressed = np.zeros_like(magnitude)
 
@@ -31,6 +34,7 @@ def non_max_suppression(magnitude: np.ndarray, angle: np.ndarray) -> np.ndarray:
     n_315= mag_pad[0:h,   2:w+2]   # top-right
 
     # ── Build direction masks (no loop) ──────────────────────────────────────
+    # matrix everywhere has the angle of its gradient direction, so we can create boolean masks
     mask_0   = ((angle <  22.5) | (angle >= 157.5))          # horizontal
     mask_45  = ((angle >= 22.5) & (angle <  67.5))           # diagonal /
     mask_90  = ((angle >= 67.5) & (angle < 112.5))           # vertical

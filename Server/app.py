@@ -65,10 +65,12 @@ class HistogramParams(BaseModel):
     mode: str
     action: str
 
+
 class LineParams(BaseModel):
     threshold: int = 100
     rho: float = 1.0
     theta: float = 1.0
+
 
 class CircleParams(BaseModel):
     dp: float = 1.2
@@ -77,6 +79,7 @@ class CircleParams(BaseModel):
     param2: int = 50
     min_radius: int = 10
     max_radius: int = 100
+
 
 class EllipseParams(BaseModel):
     edge_thresh: int = 50
@@ -97,7 +100,7 @@ class SnakeParams(BaseModel):
 
 
 class ContourAnalysisParams(BaseModel):
-    contour: List[List[float]]   # final_contour from run_snake → list of [x, y]
+    contour: List[List[float]]  # final_contour from run_snake → list of [x, y]
 
 
 @app.post("/upload")
@@ -121,12 +124,12 @@ async def apply_spatial(
     if image_id not in images:
         raise HTTPException(status_code=404, detail="Image not found")
 
-    img      = images[image_id]
-    noisy    = add_noise(img, params.noise_type, params.noise_ratio)
+    img = images[image_id]
+    noisy = add_noise(img, params.noise_type, params.noise_ratio)
     filtered = apply_filter(noisy, params.filter_type, params.kernel_size)
 
     return {
-        "noisy_image":    image_to_base64(noisy),
+        "noisy_image": image_to_base64(noisy),
         "filtered_image": image_to_base64(filtered),
     }
 
@@ -139,16 +142,16 @@ async def apply_edge_detection(
     if image_id not in images:
         raise HTTPException(status_code=404, detail="Image not found")
 
-    img  = images[image_id]
+    img = images[image_id]
     gray = to_grayscale(img)
 
     results = apply_edge(
         gray,
-        method         = params.method,
-        canny_mode     = params.canny_mode,
-        low_threshold  = params.low_threshold,
-        high_threshold = params.high_threshold,
-        sigma          = params.sigma,
+        method=params.method,
+        canny_mode=params.canny_mode,
+        low_threshold=params.low_threshold,
+        high_threshold=params.high_threshold,
+        sigma=params.sigma,
     )
 
     response = {}
@@ -156,9 +159,12 @@ async def apply_edge_detection(
         response["edges"] = image_to_base64(results[0]["image"])
     else:
         for res in results:
-            if   res["label"] == "X-Gradient": response["gx"]        = image_to_base64(res["image"])
-            elif res["label"] == "Y-Gradient": response["gy"]        = image_to_base64(res["image"])
-            elif res["label"] == "Magnitude":  response["magnitude"] = image_to_base64(res["image"])
+            if res["label"] == "X-Gradient":
+                response["gx"] = image_to_base64(res["image"])
+            elif res["label"] == "Y-Gradient":
+                response["gy"] = image_to_base64(res["image"])
+            elif res["label"] == "Magnitude":
+                response["magnitude"] = image_to_base64(res["image"])
 
     return response
 
@@ -185,8 +191,8 @@ async def apply_hybrid_endpoint(params: HybridParams):
     )
 
     return {
-        "lp_image":     image_to_base64(lp),
-        "hp_image":     image_to_base64(hp),
+        "lp_image": image_to_base64(lp),
+        "hp_image": image_to_base64(hp),
         "hybrid_image": image_to_base64(hybrid),
     }
 
@@ -202,6 +208,7 @@ async def apply_histogram(
     result = process_histogram(images[image_id], params.mode, params.action)
     return result
 
+
 @app.post("/apply_line")
 async def apply_line_detection(
     image_id: str = Query(...),
@@ -211,20 +218,18 @@ async def apply_line_detection(
         raise HTTPException(status_code=404, detail="Image not found")
 
     img = images[image_id]
-    
+
     # Run your manual transform with provided params
     lines = manual_hough_transform(
-        img, 
-        threshold=params.threshold, 
-        rho_res=params.rho, 
-        theta_res=params.theta
+        img, threshold=params.threshold, rho_res=params.rho, theta_res=params.theta
     )
-    
+
     # Generate the result image
     result_img = draw_lines_on_image(img, lines)
-    
+
     # Convert back to base64 for the frontend
     return {"result": image_to_base64(result_img)}
+
 
 @app.post("/apply_circle")
 async def apply_circle_detection(
@@ -235,21 +240,22 @@ async def apply_circle_detection(
         raise HTTPException(status_code=404, detail="Image not found")
 
     img = images[image_id]
-    
+
     # Use your functions from cccppp.py
-    circles_matrix, _ = detect_circles_hough(
-        img, 
-        dp=params.dp, 
-        minDist=params.min_dist, 
-        param1=params.param1, 
-        param2=params.param2, 
-        minRadius=params.min_radius, 
-        maxRadius=params.max_radius
+    circles_matrix = detect_circles_hough(
+        img,
+        dp=params.dp,
+        minDist=params.min_dist,
+        param1=params.param1,
+        param2=params.param2,
+        minRadius=params.min_radius,
+        maxRadius=params.max_radius,
     )
-    
+
     result_img = draw_detected_circles(img, circles_matrix)
-    
+
     return {"result": image_to_base64(result_img)}
+
 
 @app.post("/apply_ellipse")
 async def apply_ellipse_detection(
@@ -281,22 +287,22 @@ async def apply_snake(
         raise HTTPException(status_code=404, detail="Image not found")
 
     result = run_snake(
-        img_rgb          = images[image_id],
-        x1               = params.x1,
-        y1               = params.y1,
-        x2               = params.x2,
-        y2               = params.y2,
-        alpha            = params.alpha,
-        beta             = params.beta,
-        gamma            = params.gamma,
-        max_iterations   = params.max_iterations,
-        adaptive_weights = params.adaptive_weights,
+        img_rgb=images[image_id],
+        x1=params.x1,
+        y1=params.y1,
+        x2=params.x2,
+        y2=params.y2,
+        alpha=params.alpha,
+        beta=params.beta,
+        gamma=params.gamma,
+        max_iterations=params.max_iterations,
+        adaptive_weights=params.adaptive_weights,
     )
 
     return {
-        "result_image":    image_to_base64(result["result_image"]),
+        "result_image": image_to_base64(result["result_image"]),
         "initial_contour": result["initial_contour"],
-        "final_contour":   result["final_contour"],
+        "final_contour": result["final_contour"],
     }
 
 
