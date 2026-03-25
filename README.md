@@ -43,15 +43,15 @@ The project is divided into two main milestones, covering fundamental image proc
 ### Milestone 2: Feature Extraction & Active Contours
 * **Shape Detection:** * Utilize the Canny edge detector in combination with detection algorithms (like the Hough Transform) to identify lines, circles, and ellipses in both grayscale and color images.
   * Superimpose the detected shapes directly onto the original images.
-  ![alt text](image.png)
-  ![alt text](image-1.png)
-  ![alt text](image-2.png)
+  ![alt text](/images/detectllines.png)
+  ![alt text](/images/detectcircles.png)
+  ![alt text](/images/detectellipse.png)
 * **Active Contour Model (Snakes):**
   * Initialize contours for specific objects.
   * Evolve the Active Contour Model using the greedy algorithm.
   * Represent the final output as a chain code.
   * Compute and display the area and perimeter inside the detected contours.
-  ![alt text](image-3.png)
+  ![alt text](/images/contourresult.png)
 
 ## 🛠️ Technologies & Libraries Used
 * **Python 3.x**
