@@ -67,10 +67,10 @@ def detect_circles_hough(
             ys_chunk = ys[i : i + chunk_size]
 
             a_centers = np.round(
-                (xs_chunk[:, None] - r * cos_thetas[None, :]) / dp
+                (xs_chunk[:, None] - r * cos_thetas[None, :]) / dp  # a=x-r*cos(theta)
             ).astype(int)
             b_centers = np.round(
-                (ys_chunk[:, None] - r * sin_thetas[None, :]) / dp
+                (ys_chunk[:, None] - r * sin_thetas[None, :]) / dp  # b=y-r*sin(theta)
             ).astype(int)
 
             valid = (

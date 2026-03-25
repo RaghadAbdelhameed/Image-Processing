@@ -80,6 +80,7 @@ def double_threshold_hysteresis(
     # Any component that contains at least one strong pixel is a real edge
     combined         = strong | weak
     structure        = np.ones((3, 3), dtype=int)   # 8-connectivity
+    # labeled is a (h, w) array where each connected component has a unique integer label
     labeled, n_labels = label(combined, structure=structure)
 
     # ── Find which component labels contain a strong pixel ───────────────────
